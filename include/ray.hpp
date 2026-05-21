@@ -43,4 +43,12 @@ private:
     double weight_;
 };
 
+// Orthonormal basis with ez aligned to the ray; in this frame the ray is (0, 0, t).
+struct RayFrame
+{
+    mfem::Vector ex;
+    mfem::Vector ey;
+    mfem::Vector ez;
+};
+
 #endif

@@ -16,6 +16,12 @@ int main()
     std::cout << "Running ray trace tests..." << std::endl;
     TestRayTrace();
 
+    std::cout << "Running NURBS mesh tests..." << std::endl;
+    TestNURBSMesh();
+
+    std::cout << "Running bilinear intersection tests..." << std::endl;
+    TestBilinearIntersection();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;

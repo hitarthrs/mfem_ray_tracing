@@ -11,6 +11,8 @@ add_library(mfem_raytracing
     src/cartesian_mesh_builder.cpp
     src/cartesian_mesh_naming.cpp
     src/ray_tracing.cpp
+    src/nurbs_mesh_operations.cpp
+    src/bilinear_intersection.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -26,6 +28,8 @@ add_executable(run_tests
     tests/test_intersect_aabb.cpp
     tests/test_cartesian_mesh.cpp
     tests/test_ray_trace.cpp
+    tests/test_nurbs_mesh.cpp
+    tests/test_bilinear_intersection.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 add_test(NAME unit_tests COMMAND run_tests)

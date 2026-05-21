@@ -34,5 +34,7 @@ void TestRay();
 void TestIntersectAABB();
 void TestCartesianMesh();
 void TestRayTrace();
+void TestNURBSMesh();
+void TestBilinearIntersection();
 
 #endif
