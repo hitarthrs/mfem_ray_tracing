@@ -13,6 +13,9 @@ int main()
     std::cout << "Running Cartesian mesh tests..." << std::endl;
     TestCartesianMesh();
 
+    std::cout << "Running ray trace tests..." << std::endl;
+    TestRayTrace();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;

@@ -29,3 +29,4 @@ cd build && ctest
 - **Ray**: `Evaluate`, normalized direction, default `t` range and weight
 - **IntersectAABB**: hit/miss on a unit square mesh, axis-parallel ray, clipping to `SetTMin`/`SetTMax`
 - **Cartesian mesh**: `SetDimension`, `GenerateCartesianMeshName`, builder validation, `ParseCLI`, mesh element/vertex counts for 1D/2D/3D
+- **Ray trace (`TraceFindPoints`)**: two-cell and single-cell crossings, miss outside mesh, distinct cells along ray

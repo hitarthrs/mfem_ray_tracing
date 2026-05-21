@@ -33,5 +33,6 @@ inline void CheckNear(double a, double b, double tol, const char *expr,
 void TestRay();
 void TestIntersectAABB();
 void TestCartesianMesh();
+void TestRayTrace();
 
 #endif
