@@ -76,9 +76,14 @@ void ComputeCoefficients(const mfem::Vector &q00,
 {
     // S(u,v) = a + b*u + c*v + d*u*v
     a = q00;
-    b = q10-q00;
-    c = q01-q00;
-    d = q11-q10-q01+q00;
+    b = q10;
+    b -= q00;
+    c = q01;
+    c -= q00;
+    d = q11;
+    d -= q10;
+    d -= q01;
+    d += q00;
 }
 
 void ComputeNormal(const mfem::Vector &b,
