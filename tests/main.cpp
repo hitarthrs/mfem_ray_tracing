@@ -22,6 +22,9 @@ int main()
     std::cout << "Running bilinear intersection tests..." << std::endl;
     TestBilinearIntersection();
 
+    std::cout << "Running element extractor tests..." << std::endl;
+    TestElementExtractor();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
