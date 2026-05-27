@@ -1,12 +1,13 @@
 # Unit tests
 
-Simple tests for `Ray` and `IntersectAABB` (no external test framework).
+Simple tests for ray tracing utilities (no external test framework). MFEM types are used throughout to verify library compatibility.
 
 ## Build and run
 
-From the project root:
+From the `mfem_raytracing` project directory (required for mesh file paths):
 
 ```bash
+cd mfem_raytracing
 cmake -S . -B build
 cmake --build build
 ./build/run_tests
@@ -26,7 +27,18 @@ cd build && ctest
 
 ## What is covered
 
-- **Ray**: `Evaluate`, normalized direction, default `t` range and weight
-- **IntersectAABB**: hit/miss on a unit square mesh, axis-parallel ray, clipping to `SetTMin`/`SetTMax`
-- **Cartesian mesh**: `SetDimension`, `GenerateCartesianMeshName`, builder validation, `ParseCLI`, mesh element/vertex counts for 1D/2D/3D
-- **Ray trace (`TraceFindPoints`)**: two-cell and single-cell crossings, miss outside mesh, distinct cells along ray
+| Test group | MFEM objects exercised |
+|------------|------------------------|
+| **Ray** | `Vector` (evaluate, normalize, segment/weight) |
+| **IntersectAABB** | `Mesh`, `Vector`, `GetBoundingBox`; 2D/3D Cartesian and loaded `.mesh` files |
+| **Cartesian mesh** | `Mesh`, `GetElementBaseGeometry`, `ElementTransformation`, `IntegrationPoint` |
+| **Ray trace** | `Mesh`, `FindPoints`, `DenseMatrix`, `Array<IntegrationPoint>`; 2D and 3D Cartesian meshes |
+| **NURBS mesh** | `Mesh`, `NURBSExtension`, `KnotVector`, `ElementTransformation`, `RefinedGeometry` |
+| **Element extractor** | `KnotVector` from NURBS meshes, `DenseMatrix`; hand-crafted knot regressions |
+| **Bilinear intersection** | `Mesh`, `IsoparametricTransformation`, `IntegrationPoint` (maintained separately) |
+
+Shared helpers in `test_helpers.hpp`: `KnotsFromKV`, `SplineDegreeFromKV`, `FindElemAndIP`.
+
+## Mesh assets
+
+Tests load files under `meshes/iga/` and `meshes/cartesian/`. Run the executable from `mfem_raytracing/` so relative paths resolve.

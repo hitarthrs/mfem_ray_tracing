@@ -6,6 +6,7 @@
 namespace
 {
 
+// Evaluate(0) returns the ray origin unchanged.
 void TestEvaluateAtOrigin()
 {
     mfem::Vector origin(3);
@@ -26,6 +27,7 @@ void TestEvaluateAtOrigin()
     CHECK_NEAR(point[2], 0.5, 1e-12);
 }
 
+// Evaluate(t) advances along the normalized direction by distance t.
 void TestEvaluateAlongDirection()
 {
     mfem::Vector origin(3);
@@ -43,6 +45,7 @@ void TestEvaluateAlongDirection()
     CHECK_NEAR(point[2], 0.0, 1e-12);
 }
 
+// Constructor stores a unit-length direction vector.
 void TestDirectionNormalized()
 {
     mfem::Vector origin(2);
@@ -59,6 +62,7 @@ void TestDirectionNormalized()
     CHECK_NEAR(d[1], 0.8, 1e-12);
 }
 
+// Default active segment is [0, 1] and weight is preserved.
 void TestDefaultSegmentAndWeight()
 {
     mfem::Vector origin(2);
