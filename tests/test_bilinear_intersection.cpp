@@ -13,6 +13,42 @@ mfem::Mesh UnitCubeMesh()
         1, 1, 1, mfem::Element::HEXAHEDRON, true, 1.0, 1.0, 1.0);
 }
 
+bool HitNearPhysicalPoint(const FaceHitInformation &hit,
+                          const Ray &ray,
+                          double px,
+                          double py,
+                          double pz,
+                          double pos_tol = 1e-2)
+{
+    if (!hit.hit)
+    {
+        return false;
+    }
+    mfem::Vector point(3);
+    ray.Evaluate(hit.t_intersection, point);
+    return std::abs(point(0) - px) < pos_tol && std::abs(point(1) - py) < pos_tol &&
+           std::abs(point(2) - pz) < pos_tol;
+}
+
+// Returns the boundary face index whose intersection lies near (px, py, pz), or -1.
+int FindBoundaryFaceNearPoint(const mfem::Mesh &mesh,
+                              const Ray &ray,
+                              double px,
+                              double py,
+                              double pz,
+                              double pos_tol = 1e-2)
+{
+    for (int face = 0; face < mesh.GetNBE(); ++face)
+    {
+        const FaceHitInformation hit = BilinearIntersection(ray, mesh, face);
+        if (HitNearPhysicalPoint(hit, ray, px, py, pz, pos_tol))
+        {
+            return face;
+        }
+    }
+    return -1;
+}
+
 int FindBoundaryFaceOnPlane(const mfem::Mesh &mesh, int axis, double value, double tol = 1e-10)
 {
     mfem::IsoparametricTransformation FTr;
@@ -152,6 +188,36 @@ void TestObliqueHit()
     CHECK(hit.normal.Norml2() > 0.0);
 }
 
+// Pipe NURBS mesh: vertical ray through (2.5, 1, z) hits the z = 0 end cap at face 0.
+void TestPipeNURBSVerticalRayHitsEndCap()
+{
+    mfem::Mesh mesh("meshes/iga/pipe-nurbs.mesh", 1, 1);
+
+    mfem::Vector origin(3);
+    mfem::Vector direction(3);
+    origin(0) = 2.5;
+    origin(1) = 1.0;
+    origin(2) = -1.0;
+    direction(0) = 0.0;
+    direction(1) = 0.0;
+    direction(2) = 1.0;
+
+    Ray ray(origin, direction);
+    ray.SetTMin(0.0);
+    ray.SetTMax(10.0);
+
+    const int hit_face = FindBoundaryFaceNearPoint(mesh, ray, 2.5, 1.0, 0.0);
+    CHECK(hit_face == 0);
+
+    const FaceHitInformation hit = BilinearIntersection(ray, mesh, hit_face);
+    CHECK(hit.hit);
+    CHECK_NEAR(hit.t_intersection, 1.0, 1e-2);
+    CHECK_NEAR(hit.local_coords(0), 2.5, 1e-2);
+    CHECK_NEAR(hit.local_coords(1), 1.0, 1e-2);
+    CHECK_NEAR(hit.local_coords(2), 0.0, 1e-2);
+    CHECK(hit.normal.Norml2() > 0.0);
+}
+
 void TestWarpedSaddleHit()
 {
     mfem::Mesh mesh = UnitCubeMesh();
@@ -212,6 +278,7 @@ void TestWarpedSaddleHit()
 
 void TestBilinearIntersection()
 {
+    TestPipeNURBSVerticalRayHitsEndCap();
     TestHitFrontFace();
     TestMissOutsidePatch();
     TestClipTMax();

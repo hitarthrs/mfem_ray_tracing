@@ -6,6 +6,9 @@ namespace
 {
 
 constexpr double kDegeneracyEps = 1e-14;
+constexpr double kIntersectionTol = 1e-8;
+constexpr double kRefineTol = 1e-12;
+constexpr int kRefineMaxIter = 25;
 
 // 2D cross product of u and v in the xy plane.
 double CrossZ(const mfem::Vector &u, const mfem::Vector &v)
@@ -86,6 +89,125 @@ void ComputeCoefficients(const mfem::Vector &q00,
     d += q00;
 }
 
+double RayParameter(const mfem::Vector &point,
+                    const mfem::Vector &origin,
+                    const mfem::Vector &direction)
+{
+    mfem::Vector delta(point);
+    delta -= origin;
+    return delta(0) * direction(0) + delta(1) * direction(1) + delta(2) * direction(2);
+}
+
+void ComputePhysicalNormal(mfem::IsoparametricTransformation &FTr,
+                           double u,
+                           double v,
+                           mfem::Vector &normal)
+{
+    mfem::IntegrationPoint ip;
+    ip.Set3(u, v, 0.0);
+    FTr.SetIntPoint(&ip);
+
+    const mfem::DenseMatrix &jac = FTr.Jacobian();
+    mfem::Vector su(3), sv(3);
+    su(0) = jac(0, 0);
+    su(1) = jac(1, 0);
+    su(2) = jac(2, 0);
+    sv(0) = jac(0, 1);
+    sv(1) = jac(1, 1);
+    sv(2) = jac(2, 1);
+    su.cross3D(sv, normal);
+
+    const double n_norm = normal.Norml2();
+    if (n_norm > kDegeneracyEps)
+    {
+        normal /= n_norm;
+    }
+}
+
+// Newton refinement on the true boundary map F(u,v): t = dot(F - O, D), D unit.
+bool RefineSurfaceRayHit(mfem::IsoparametricTransformation &FTr,
+                         const Ray &ray,
+                         const RayFrame &frame,
+                         double &u,
+                         double &v,
+                         double &t)
+{
+    const mfem::Vector &O = ray.GetOrigin();
+    const mfem::Vector &D = ray.GetDirection();
+
+    mfem::IntegrationPoint ip;
+    mfem::Vector F(3), r(3), dFdu(3), dFdv(3), drdu(3), drdv(3);
+
+    for (int iter = 0; iter < kRefineMaxIter; ++iter)
+    {
+        ip.Set3(u, v, 0.0);
+        FTr.SetIntPoint(&ip);
+        FTr.Transform(ip, F);
+
+        t = RayParameter(F, O, D);
+
+        r = F;
+        r.Add(-1.0, O);
+        r.Add(-t, D);
+
+        const double rx = r(0) * frame.ex(0) + r(1) * frame.ex(1) + r(2) * frame.ex(2);
+        const double ry = r(0) * frame.ey(0) + r(1) * frame.ey(1) + r(2) * frame.ey(2);
+        const double res_norm = std::hypot(rx, ry);
+        if (res_norm < kRefineTol)
+        {
+            return true;
+        }
+
+        const mfem::DenseMatrix &jac = FTr.Jacobian();
+        dFdu(0) = jac(0, 0);
+        dFdu(1) = jac(1, 0);
+        dFdu(2) = jac(2, 0);
+        dFdv(0) = jac(0, 1);
+        dFdv(1) = jac(1, 1);
+        dFdv(2) = jac(2, 1);
+
+        const double dtd_u = dFdu(0) * D(0) + dFdu(1) * D(1) + dFdu(2) * D(2);
+        const double dtd_v = dFdv(0) * D(0) + dFdv(1) * D(1) + dFdv(2) * D(2);
+
+        drdu = dFdu;
+        drdu.Add(-dtd_u, D);
+        drdv = dFdv;
+        drdv.Add(-dtd_v, D);
+
+        const double J00 = drdu(0) * frame.ex(0) + drdu(1) * frame.ex(1) + drdu(2) * frame.ex(2);
+        const double J01 = drdv(0) * frame.ex(0) + drdv(1) * frame.ex(1) + drdv(2) * frame.ex(2);
+        const double J10 = drdu(0) * frame.ey(0) + drdu(1) * frame.ey(1) + drdu(2) * frame.ey(2);
+        const double J11 = drdv(0) * frame.ey(0) + drdv(1) * frame.ey(1) + drdv(2) * frame.ey(2);
+
+        const double det = J00 * J11 - J01 * J10;
+        if (std::abs(det) < kDegeneracyEps)
+        {
+            return false;
+        }
+
+        u += (-rx * J11 + ry * J01) / det;
+        v += (-J00 * ry + J10 * rx) / det;
+    }
+
+    return false;
+}
+
+void CommitHit(double u,
+               double v,
+               double t,
+               const Ray &ray,
+               mfem::IsoparametricTransformation &FTr,
+               FaceHitInformation &best)
+{
+    best.hit = true;
+    best.t_intersection = t;
+    best.u = u;
+    best.v = v;
+    best.local_coords.SetSize(3);
+    ray.Evaluate(t, best.local_coords);
+    ComputePhysicalNormal(FTr, u, v, best.normal);
+}
+
 void ComputeNormal(const mfem::Vector &b,
                    const mfem::Vector &c,
                    const mfem::Vector &d,
@@ -148,7 +270,7 @@ bool TryCandidate(double u,
 
     const double sx = a(0) + b(0) * u + c(0) * v + d(0) * u * v;
     const double sy = a(1) + b(1) * u + c(1) * v + d(1) * u * v;
-    if (std::abs(sx) > 1e-10 || std::abs(sy) > 1e-10)
+    if (std::abs(sx) > kIntersectionTol || std::abs(sy) > kIntersectionTol)
     {
         return false;
     }
@@ -179,6 +301,21 @@ bool TryCandidate(double u,
     return true;
 }
 
+void ScanUCandidates(const mfem::Vector &a,
+                     const mfem::Vector &b,
+                     const mfem::Vector &c,
+                     const mfem::Vector &d,
+                     const Ray &ray,
+                     const RayFrame &frame,
+                     FaceHitInformation &best)
+{
+    constexpr int nu = 256;
+    for (int i = 0; i <= nu; ++i)
+    {
+        TryCandidate(static_cast<double>(i) / nu, a, b, c, d, ray, frame, best);
+    }
+}
+
 void SolveForRoots(double A,
                    double B,
                    double C,
@@ -194,21 +331,76 @@ void SolveForRoots(double A,
     if (std::abs(A) > kDegeneracyEps)
     {
         const double disc = B * B - 4.0 * A * C;
-        if (disc < 0.0)
+        if (disc >= 0.0)
         {
-            return;
+            const double sqrt_disc = std::sqrt(disc);
+            TryCandidate((-B + sqrt_disc) / (2.0 * A), a, b, c, d, ray, frame, best);
+            TryCandidate((-B - sqrt_disc) / (2.0 * A), a, b, c, d, ray, frame, best);
         }
+    }
+    else if (std::abs(B) > kDegeneracyEps)
+    {
+        TryCandidate(-C / B, a, b, c, d, ray, frame, best);
+    }
 
-        const double sqrt_disc = std::sqrt(disc);
-        TryCandidate((-B + sqrt_disc) / (2.0 * A), a, b, c, d, ray, frame, best);
-        TryCandidate((-B - sqrt_disc) / (2.0 * A), a, b, c, d, ray, frame, best);
+    // Quadratic roots can lie outside [0, 1]; scan u on the face parameter range.
+    ScanUCandidates(a, b, c, d, ray, frame, best);
+}
+
+void PhysicalBilinearSearch(const Ray &ray,
+                            mfem::IsoparametricTransformation &FTr,
+                            FaceHitInformation &best)
+{
+    const mfem::Vector &O = ray.GetOrigin();
+    const mfem::Vector &D = ray.GetDirection();
+
+    mfem::IntegrationPoint ip;
+    constexpr int n = 256;
+
+    double best_dist = 1e300;
+    double seed_u = 0.0;
+    double seed_v = 0.0;
+    double seed_t = 0.0;
+
+    for (int i = 0; i <= n; ++i)
+    {
+        for (int j = 0; j <= n; ++j)
+        {
+            const double u = static_cast<double>(i) / n;
+            const double v = static_cast<double>(j) / n;
+
+            ip.Set3(u, v, 0.0);
+            FTr.SetIntPoint(&ip);
+            mfem::Vector P(3);
+            FTr.Transform(ip, P);
+
+            const double t = RayParameter(P, O, D);
+            if (t < ray.GetTMin() || t > ray.GetTMax())
+            {
+                continue;
+            }
+
+            mfem::Vector on_ray(3);
+            ray.Evaluate(t, on_ray);
+            on_ray -= P;
+            const double dist = on_ray.Norml2();
+            if (dist < best_dist)
+            {
+                best_dist = dist;
+                seed_u = u;
+                seed_v = v;
+                seed_t = t;
+            }
+        }
+    }
+
+    constexpr double seed_tol = 0.05;
+    if (best_dist > seed_tol)
+    {
         return;
     }
 
-    if (std::abs(B) > kDegeneracyEps)
-    {
-        TryCandidate(-C / B, a, b, c, d, ray, frame, best);  // planar / degenerate quadratic
-    }
+    CommitHit(seed_u, seed_v, seed_t, ray, FTr, best);
 }
 
 }  // namespace
@@ -259,5 +451,23 @@ FaceHitInformation BilinearIntersection(const Ray &ray, const mfem::Mesh &mesh, 
     const double C = CrossZ(a, c);
 
     SolveForRoots(A, B, C, a, b, c, d, ray, frame, result);
+
+    if (!result.hit)
+    {
+        PhysicalBilinearSearch(ray, FTr, result);
+    }
+
+    if (result.hit)
+    {
+        double u = result.u;
+        double v = result.v;
+        double t = result.t_intersection;
+        if (RefineSurfaceRayHit(FTr, ray, frame, u, v, t) && u >= 0.0 && u <= 1.0 && v >= 0.0 &&
+            v <= 1.0 && t >= ray.GetTMin() && t <= ray.GetTMax())
+        {
+            CommitHit(u, v, t, ray, FTr, result);
+        }
+    }
+
     return result;
 }
