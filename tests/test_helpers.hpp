@@ -87,5 +87,6 @@ void TestRayTrace();
 void TestNURBSMesh();
 void TestBilinearIntersection();
 void TestElementExtractor();
+void TestKroneckerProduct();
 
 #endif

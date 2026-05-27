@@ -25,6 +25,9 @@ int main()
     std::cout << "Running element extractor tests..." << std::endl;
     TestElementExtractor();
 
+    std::cout << "Running Kronecker product tests..." << std::endl;
+    TestKroneckerProduct();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
