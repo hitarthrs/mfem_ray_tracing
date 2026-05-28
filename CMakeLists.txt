@@ -15,6 +15,9 @@ add_library(mfem_raytracing
     src/bilinear_intersection.cpp
     src/element_extractor.cpp
     src/kronecker_product.cpp
+    src/ien_generator.cpp
+    src/id_generator.cpp
+    src/lm_generator.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -34,6 +37,10 @@ add_executable(run_tests
     tests/test_bilinear_intersection.cpp
     tests/test_element_extractor.cpp
     tests/test_kronecker_product.cpp
+    tests/test_ien_generator.cpp
+    tests/test_id_generator.cpp
+    tests/test_lm_generator.cpp
+    tests/test_iga_reference_connectivity.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 add_test(NAME unit_tests COMMAND run_tests
