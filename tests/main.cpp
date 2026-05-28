@@ -28,6 +28,18 @@ int main()
     std::cout << "Running Kronecker product tests..." << std::endl;
     TestKroneckerProduct();
 
+    std::cout << "Running IEN generator tests..." << std::endl;
+    TestIENGenerator();
+
+    std::cout << "Running ID generator tests..." << std::endl;
+    TestIDGenerator();
+
+    std::cout << "Running LM generator tests..." << std::endl;
+    TestLMGenerator();
+
+    std::cout << "Running IGA reference connectivity tests..." << std::endl;
+    TestIGAReferenceConnectivity();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;

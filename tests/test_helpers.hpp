@@ -88,5 +88,9 @@ void TestNURBSMesh();
 void TestBilinearIntersection();
 void TestElementExtractor();
 void TestKroneckerProduct();
+void TestIENGenerator();
+void TestIDGenerator();
+void TestLMGenerator();
+void TestIGAReferenceConnectivity();
 
 #endif
