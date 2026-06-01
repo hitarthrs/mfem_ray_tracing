@@ -2,3 +2,6 @@ make_cart_mesh
 test
 
 build/
+
+src/nurbs_mesh_operations.cpp
+include/nurbs_mesh_operations.hpp

@@ -18,12 +18,19 @@ add_library(mfem_raytracing
     src/ien_generator.cpp
     src/id_generator.cpp
     src/lm_generator.cpp
+    src/bdr_patch_extractor.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
 
 add_executable(make_cart_mesh src/make_cart_mesh.cpp)
 target_link_libraries(make_cart_mesh PRIVATE mfem_raytracing)
+
+add_executable(print_bdr_elements tests/print_bdr_elements.cpp)
+target_link_libraries(print_bdr_elements PRIVATE mfem)
+
+add_executable(print_bdr_patch_blocks tests/print_bdr_patch_blocks.cpp)
+target_link_libraries(print_bdr_patch_blocks PRIVATE mfem_raytracing)
 
 enable_testing()
 
@@ -41,6 +48,7 @@ add_executable(run_tests
     tests/test_id_generator.cpp
     tests/test_lm_generator.cpp
     tests/test_iga_reference_connectivity.cpp
+    tests/test_bdr_patch_extractor.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 add_test(NAME unit_tests COMMAND run_tests

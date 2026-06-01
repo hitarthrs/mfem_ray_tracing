@@ -38,6 +38,25 @@ void CheckMatrixEntry(const mfem::DenseMatrix &mat,
     CHECK_NEAR(mat(row, col), expected, tol);
 }
 
+// One knot span {0,0,0,1,1,1}: Algorithm 1 returns 2 passes, PerSpan returns 1.
+void TestExtractorsPerSpanSingleQuadraticSpan()
+{
+    const std::vector<double> knots = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+    const auto all = ElementExtractors(knots, 2);
+    const auto per_span = ElementExtractorsPerSpan(knots, 2, 1);
+
+    CHECK(static_cast<int>(all.size()) == 2);
+    CHECK(static_cast<int>(per_span.size()) == 1);
+    CHECK(per_span[0].matrix.Height() == 3);
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            CHECK_NEAR(per_span[0].matrix(i, j), all[0].matrix(i, j), 1e-12);
+        }
+    }
+}
+
 // Hand-crafted quadratic knot vector yields known 3x3 extraction matrices.
 void TestQuadraticThreeElementKnotVector()
 {
@@ -191,6 +210,7 @@ void TestExtractorSquareNURBSParamDirs()
 
 void TestElementExtractor()
 {
+    TestExtractorsPerSpanSingleQuadraticSpan();
     TestSplineDegreeConventionFromSegmentNURBS();
     TestExtractorFromSegmentNURBS();
     TestExtractorMatchesHandLinear();

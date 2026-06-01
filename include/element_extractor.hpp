@@ -31,4 +31,15 @@ struct ElementExtractor
 std::vector<ElementExtractor> ElementExtractors(const std::vector<double> &knot_vector,
                                                 int degree);
 
+/**
+ * @brief One extraction operator per knot span (element), matching MFEM KnotVector::GetNE().
+ *
+ * Algorithm 1 may emit one extra pass at high-multiplicity knots; this keeps the
+ * first @a num_spans operators (the per-span C_e matrices used in IGA).
+ */
+std::vector<ElementExtractor> ElementExtractorsPerSpan(
+    const std::vector<double> &knot_vector,
+    int degree,
+    int num_spans);
+
 #endif

@@ -127,3 +127,24 @@ std::vector<ElementExtractor> ElementExtractors(const std::vector<double> &knot_
     element_extractors.resize(nb);
     return element_extractors;
 }
+
+std::vector<ElementExtractor> ElementExtractorsPerSpan(
+    const std::vector<double> &knot_vector,
+    int degree,
+    int num_spans)
+{
+    if (num_spans < 1)
+    {
+        throw std::invalid_argument("num_spans must be at least 1");
+    }
+
+    std::vector<ElementExtractor> all = ElementExtractors(knot_vector, degree);
+    if (static_cast<int>(all.size()) < num_spans)
+    {
+        throw std::invalid_argument(
+            "ElementExtractorsPerSpan: fewer algorithm passes than knot spans");
+    }
+
+    all.resize(static_cast<std::size_t>(num_spans));
+    return all;
+}

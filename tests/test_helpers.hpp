@@ -92,5 +92,6 @@ void TestIENGenerator();
 void TestIDGenerator();
 void TestLMGenerator();
 void TestIGAReferenceConnectivity();
+void TestBdrPatchExtractor();
 
 #endif

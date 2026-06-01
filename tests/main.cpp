@@ -40,6 +40,9 @@ int main()
     std::cout << "Running IGA reference connectivity tests..." << std::endl;
     TestIGAReferenceConnectivity();
 
+    std::cout << "Running boundary patch extractor tests..." << std::endl;
+    TestBdrPatchExtractor();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
