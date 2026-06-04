@@ -3,5 +3,10 @@ test
 
 build/
 
+python_experiments/.venv/
+python_experiments/outputs/
+python_experiments/python
+
+
 src/nurbs_mesh_operations.cpp
 include/nurbs_mesh_operations.hpp
