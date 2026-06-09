@@ -112,6 +112,11 @@ def horseshoe_control_points() -> np.ndarray:
     )
 
 def s_shaped_control_points() -> np.ndarray:
+    return s_shaped_p6_control_points()
+
+
+def s_shaped_p6_control_points() -> np.ndarray:
+    """Nine control points for the S-shaped demo (used with degree-6 knots)."""
     return np.array(
         [
             [0.0, 0.0],
@@ -123,8 +128,22 @@ def s_shaped_control_points() -> np.ndarray:
             [9.0, -4.0],
             [11.0, -2.0],
             [12.0, 0.0],
-        ]
+        ],
+        dtype=float,
     )
+
+
+def s_shaped_knots_p6() -> np.ndarray:
+    """Open knot vector for degree p=6: two spans [0, 0.5] and [0.5, 1] (n=9 CPs)."""
+    return np.array(
+        [
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.5, 0.5,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ],
+        dtype=float,
+    )
+
 
 def s_shaped_20_control_points() -> np.ndarray:
     return np.array([
@@ -165,6 +184,47 @@ def s_shaped_ultra_refined_control_points() -> np.ndarray:
     [11.0400000000, -1.6000000000],
     [11.6000000000, -0.8000000000],
     [12.0000000000, 0.0000000000]])
+    
+# def multiple_peak_control_points() -> np.ndarray:
+#     return np.array([
+#         [0.0, 5.0],
+#         [2.0, 8.0],
+#         [5.0, 2.0],
+#         [7.0, 19.0],
+#         [8.0, -12.0],
+#         [9.0, 19.0],
+#         [11.0, 4.0],
+#         [14.0, 4.0],
+#         [17.0, 8.5],
+#         [20.0, 6.0],
+#         [22.0, 2.5],
+#         [24.0, 5.0],
+#     ])
+    
+def multiple_peak_control_points() -> np.ndarray:
+    return np.array([
+        [0.0, 5.0],
+        [2.0, 8.0],
+        [5.0, 2.0],
+        # --- OSCILLATION ZONE START ---
+        [6.2, 3.5],    # NEW POINT 1: Stabilizes the inflection into the first peak
+        [7.0, 19.0],   # First High Peak
+        [7.5, 4.0],    # NEW POINT 2: Sharpens the drop halfway down the first peak
+        [8.0, -12.0],  # Deep Sharp Trough
+        [8.5, 4.0],    # NEW POINT 3: Sharpens the ascent into the second peak
+        [9.0, 19.0],   # Second High Peak
+        [10.0, 3.0],   # NEW POINT 4: Captures the tight exit pullout before the plateau
+        # --- OSCILLATION ZONE END ---
+        [11.0, 4.0],
+        [14.0, 4.0],
+        [17.0, 8.5],
+        [20.0, 6.0],
+        [22.0, 2.5],
+        [24.0, 5.0],
+    ])
+
+def multiple_peak_knots() -> np.ndarray:
+    return np.array([0,0,0,0,0,0,0,0.25, 0.25, 0.25, 0.5, 0.5, 0.5,0.75, 0.75, 0.75,1,1,1,1,1,1,1])
 
 def visualize_bspline_curve(
     control_points: np.ndarray,
