@@ -25,7 +25,7 @@ from .knot_refinement_common import (
     unique_active_knots,
 )
 
-DEFAULT_MIN_STEP = 0.05
+DEFAULT_MIN_STEP = 0.01
 
 
 def span_lengths(unique_knots: np.ndarray) -> list[Fraction]:

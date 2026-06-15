@@ -50,12 +50,19 @@ def new_knots_from_grid(
     grid: list[Fraction],
 ) -> list[float]:
     """Grid points not already in ``U`` (existing multiplicities unchanged)."""
+    return new_knots_from_values(knotvector, [float(t) for t in grid])
+
+
+def new_knots_from_values(
+    knotvector: np.ndarray,
+    values: list[float],
+) -> list[float]:
+    """Parameter values not already in ``U`` (existing multiplicities unchanged)."""
     kv = np.asarray(knotvector, dtype=float)
     new_knots: list[float] = []
-    for t in grid:
-        u_val = float(t)
-        if not knot_already_present(kv, u_val):
-            new_knots.append(u_val)
+    for u_val in values:
+        if not knot_already_present(kv, float(u_val)):
+            new_knots.append(float(u_val))
     return new_knots
 
 
