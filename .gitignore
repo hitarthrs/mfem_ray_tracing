@@ -5,7 +5,12 @@ build/
 
 python_experiments/.venv/
 python_experiments/outputs/
+python_experiments/knot_refinement_experiment_outputs/
+python_experiments/knot_refinement_experiments/*/outputs/*
+!python_experiments/knot_refinement_experiments/*/outputs/.gitkeep
+python_experiments/nurbs_curve_example_outputs/
 python_experiments/python
+python_experiments/__pycache__/
 
 
 src/nurbs_mesh_operations.cpp

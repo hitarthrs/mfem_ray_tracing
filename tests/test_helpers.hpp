@@ -93,5 +93,6 @@ void TestIDGenerator();
 void TestLMGenerator();
 void TestIGAReferenceConnectivity();
 void TestBdrPatchExtractor();
+void TestBSplineCurveReduction();
 
 #endif

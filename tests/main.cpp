@@ -43,6 +43,9 @@ int main()
     std::cout << "Running boundary patch extractor tests..." << std::endl;
     TestBdrPatchExtractor();
 
+    std::cout << "Running B-spline curve degree reduction tests..." << std::endl;
+    TestBSplineCurveReduction();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
