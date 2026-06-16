@@ -8,6 +8,9 @@ python_experiments/outputs/
 python_experiments/knot_refinement_experiment_outputs/
 python_experiments/knot_refinement_experiments/*/outputs/*
 !python_experiments/knot_refinement_experiments/*/outputs/.gitkeep
+!python_experiments/simple_curve_examples/outputs/README.md
+!python_experiments/simple_curve_examples/outputs/curves/.gitkeep
+!python_experiments/simple_curve_examples/outputs/surfaces/.gitkeep
 python_experiments/nurbs_curve_example_outputs/
 python_experiments/python
 python_experiments/__pycache__/
