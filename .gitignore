@@ -8,13 +8,15 @@ python_experiments/outputs/
 python_experiments/knot_refinement_experiment_outputs/
 python_experiments/knot_refinement_experiments/*/outputs/*
 !python_experiments/knot_refinement_experiments/*/outputs/.gitkeep
+python_experiments/surface_knot_refinement_experiments/*/outputs/*
+!python_experiments/surface_knot_refinement_experiments/*/outputs/.gitkeep
 !python_experiments/simple_curve_examples/outputs/README.md
 !python_experiments/simple_curve_examples/outputs/curves/.gitkeep
 !python_experiments/simple_curve_examples/outputs/surfaces/.gitkeep
 python_experiments/nurbs_curve_example_outputs/
-python_experiments/python
+python_experiments/python_experiments.egg-info/
 python_experiments/__pycache__/
-
+python_experiments/*/__pycache__/
 
 src/nurbs_mesh_operations.cpp
 include/nurbs_mesh_operations.hpp
