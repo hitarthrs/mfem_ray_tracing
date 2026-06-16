@@ -11,5 +11,3 @@ python examples.py -c s_shaped -n
 # Surfaces → outputs/surfaces/<name>.png
 python surface_examples.py -s right_angled_squared -n
 ```
-
-PNG files here are gitignored; this README keeps the directory visible in the repo.
