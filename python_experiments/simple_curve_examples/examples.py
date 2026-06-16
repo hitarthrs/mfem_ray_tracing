@@ -18,17 +18,8 @@ from plot_bspline_curve import plot_bspline_curve
 CurveType = Literal["bspline", "nurbs"]
 PlotBackend = Literal["matplotlib", "vismpl"]
 
-curve_names = [
-    "s_shaped",
-    "asymmetric_s_shaped",
-    "single_peak_uniform",
-    "single_peak_lopsided",
-    "semicircle",
-    "single_peak_trailing",
-    "slow_ascent_plateau",
-    "circular_ascent_plateau",
-]
-
+# Populated from EXAMPLES after all examples are defined (single source of truth).
+curve_names: list[str] = []
 
 class SimpleCurveExample:
     """Lightweight curve holder with matplotlib / VisMPL plotting."""
@@ -281,23 +272,6 @@ asymmetric_s_shaped_example = SimpleCurveExample(
 
 
 # ------------------------------ Example 3: Single peak uniform curve ------------------------------
-# def single_peak_uniform_control_points() -> np.ndarray:
-#     """
-#     8 CPs, single peak uniform curve.
-#     """
-#     return np.array(
-#         [
-#             [0.0,  0.0],
-#             [1.0,  1.0],
-#             [2.0,  2.0],
-#             [3.0,  1.0],
-#             [5.0, -1.0],
-#             [6.0, -2.0],
-#             [7.0, -1.0],
-#             [8.0,  0.0],
-#         ],
-#         dtype=float,
-#     )
 
 def single_peak_uniform_control_points() -> np.ndarray:
     """
@@ -323,7 +297,7 @@ def single_peak_uniform_knots() -> np.ndarray:
     Every internal knot has a multiplicity of 2 (C1 joint boundaries).
     """
     return np.array(
-        [0.0, 0.0, 0.0, 0.0, 0.33, 0.33, 0.66, 0.66, 1.0, 1.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0, 0.0, 0.33, 0.33, 0.66, 0.66,1.0, 1.0, 1.0, 1.0],
         dtype=float,
     )
     
@@ -493,6 +467,48 @@ circular_ascent_plateau_example = SimpleCurveExample(
     degree=3,
 )
 
+# ------------------------------ Example 9: Right angled curve ------------------------------
+
+def right_angled_curve_control_points() -> np.ndarray:
+    """
+    8 CPs, single peak uniform curve.
+    """
+    return np.array(
+        [
+            [0.0,  0.0],
+            [0.5,  0.5],
+            [1.0, 1.0],
+            [2.0,  2.0],
+            [3.0,  1.0],
+            [5.0, -1.0],
+            [6.0, -2.0],
+            [7.0, -1.0],
+            [7.5, -0.5],
+            [8.0,  0.0],
+        ],
+        dtype=float,
+    )
+
+def right_angled_curve_knots() -> np.ndarray:
+    """
+    Open-clamped knot vector for n=10, p=3 (Length 14).
+    Every internal knot has a multiplicity of 3.
+    """
+    return np.array(
+        [0.0, 0.0, 0.0, 0.0, 0.33 , 0.33 , 0.33, 0.66, 0.66, 0.66 ,1.0, 1.0, 1.0, 1.0],
+        dtype=float,
+    )
+    
+right_angled_curve_example = SimpleCurveExample(
+    name="right_angled_curve",
+    type="bspline",
+    control_points=right_angled_curve_control_points(),
+    knots=right_angled_curve_knots(),
+    degree=3,
+)
+
+
+
 EXAMPLES: dict[str, SimpleCurveExample] = {
     "s_shaped": s_shaped_example,
     "asymmetric_s_shaped": asymmetric_s_shaped_example,
@@ -502,8 +518,10 @@ EXAMPLES: dict[str, SimpleCurveExample] = {
     "single_peak_trailing": single_peak_trailing_example,
     "slow_ascent_plateau": slow_ascent_plateau_example,
     "circular_ascent_plateau": circular_ascent_plateau_example,
+    "right_angled_curve": right_angled_curve_example,
 }
 
+curve_names = list(EXAMPLES)
 
 def load_simple_example(name: str) -> SimpleCurveExample:
     """Return a registered simple curve example by short name."""
@@ -539,24 +557,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", choices=curve_names, default="single_peak_lopsided")
     args = parser.parse_args()
 
-    if args.c == "s_shaped":
-        example = s_shaped_example
-    elif args.c == "asymmetric_s_shaped":
-        example = asymmetric_s_shaped_example
-    elif args.c == "single_peak_uniform":
-        example = single_peak_uniform_example
-    elif args.c == "single_peak_lopsided":
-        example = single_peak_lopsided_example
-    elif args.c == "single_peak_trailing":
-        example = single_peak_trailing_example
-    elif args.c == "semicircle":
-        example = semicircle_example
-    elif args.c == "slow_ascent_plateau":
-        example = slow_ascent_plateau_example
-    elif args.c == "circular_ascent_plateau":
-        example = circular_ascent_plateau_example
-    else:
-        raise ValueError(f"Unknown curve: {args.c}")
+    example = load_simple_example(args.c)
 
     example.plot(
         backend=args.backend,
