@@ -121,7 +121,8 @@ class SimpleCurveExample:
             (evaluated curve + knot index plot).
             ``vismpl`` — interactive geomdl VisMPL window (2D or 3D).
         save_path:
-            Optional PNG path (saved when provided, or when ``show=False``).
+            Optional PNG path. Bare filenames are written under
+            ``outputs/curves/``; omit to skip saving unless ``show=False``.
         show:
             Display an interactive window when supported.
         title:
@@ -546,21 +547,34 @@ def simple_example_from_cli(curve: str) -> SimpleCurveExample:
 if __name__ == "__main__":
     import argparse
 
+    from simple_curve_examples.paths import resolve_curve_save_path
+
     parser = argparse.ArgumentParser(description="Plot a simple curve example.")
     parser.add_argument(
         "--backend",
         choices=("matplotlib", "vismpl"),
         default="matplotlib",
     )
-    parser.add_argument("-o", "--save", type=Path, default=None)
+    parser.add_argument(
+        "-o",
+        "--save",
+        type=Path,
+        default=None,
+        help="PNG path (bare filename → outputs/curves/; default on -n: outputs/curves/<curve>.png)",
+    )
     parser.add_argument("-n", "--no-show", action="store_true")
     parser.add_argument("-c", choices=curve_names, default="single_peak_lopsided")
     args = parser.parse_args()
 
     example = load_simple_example(args.c)
+    save_path = resolve_curve_save_path(
+        args.save,
+        name=args.c,
+        show=not args.no_show,
+    )
 
     example.plot(
         backend=args.backend,
-        save_path=args.save,
+        save_path=save_path,
         show=not args.no_show,
     )

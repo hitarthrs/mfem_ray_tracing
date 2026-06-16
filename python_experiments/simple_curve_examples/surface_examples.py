@@ -8,8 +8,7 @@ separable 3D control net
 and using the u-curve / v-curve knot vectors and degrees along the two parametric
 directions.  Rational curves contribute tensor-product weights w[i, j] = w_u(i) w_v(j).
 
-Plotting uses geomdl VisMPL (interactive 3D) or the matplotlib breakdown helpers
-from :mod:`bspline_surface_visualizer`.
+Plotting uses geomdl VisMPL (interactive 3D surface + control net).
 """
 
 from __future__ import annotations
@@ -26,16 +25,11 @@ _PYTHON_EXPERIMENTS = Path(__file__).resolve().parent.parent
 if str(_PYTHON_EXPERIMENTS) not in sys.path:
     sys.path.insert(0, str(_PYTHON_EXPERIMENTS))
 
-from bspline_surface_visualizer import (
-    build_bspline_surface,
-    render_surface_vismpl,
-    visualize_bspline_surface,
-)
+from bspline_surface_visualizer import build_bspline_surface, render_surface_vismpl
 from simple_curve_examples.examples import SimpleCurveExample, load_simple_example
+from simple_curve_examples.paths import resolve_surface_save_path
 
 SurfaceType = Literal["bspline", "nurbs"]
-PlotBackend = Literal["vismpl", "matplotlib", "breakdown"]
-
 
 def tensor_product_control_net(
     u_curve: SimpleCurveExample,
@@ -198,55 +192,30 @@ class SimpleSurfaceExample:
     def plot(
         self,
         *,
-        backend: PlotBackend = "vismpl",
         save_path: Path | str | None = None,
         show: bool = True,
         title: str | None = None,
         delta: float = 0.04,
         vismpl_style: Literal["surface", "wireframe"] = "surface",
     ) -> None:
+        """Interactive geomdl VisMPL 3D plot (colored surface + control net)."""
         surface = self.to_geomdl_surface(delta=delta)
-        label = title or self.default_title()
+        surface.name = title or self.default_title()
         out = Path(save_path) if save_path is not None else None
 
-        if backend == "vismpl":
-            write_file = None
-            if out is not None:
-                write_file = out if out.suffix else out.with_suffix(".png")
-                write_file.parent.mkdir(parents=True, exist_ok=True)
-            render_surface_vismpl(
-                surface,
-                style=vismpl_style,
-                show=show,
-                save_path=write_file,
-            )
-            if write_file is not None:
-                print(f"Saved {write_file}")
-            return
+        write_file = None
+        if out is not None:
+            write_file = out if out.suffix else out.with_suffix(".png")
+            write_file.parent.mkdir(parents=True, exist_ok=True)
 
-        if backend == "matplotlib":
-            visualize_bspline_surface(
-                surface,
-                title=label,
-                save_stem=out,
-                show=show,
-                use_vismpl=False,
-                vismpl_style=vismpl_style,
-            )
-            return
-
-        if backend == "breakdown":
-            visualize_bspline_surface(
-                surface,
-                title=label,
-                save_stem=out,
-                show=show,
-                use_vismpl=True,
-                vismpl_style=vismpl_style,
-            )
-            return
-
-        raise ValueError(f"unknown plot backend: {backend}")
+        render_surface_vismpl(
+            surface,
+            style=vismpl_style,
+            show=show,
+            save_path=write_file,
+        )
+        if write_file is not None:
+            print(f"Saved {write_file}")
 
 
 # ------------------------------ Registered tensor-product surfaces ------------------------------
@@ -299,7 +268,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Plot a tensor-product surface built from simple curve examples."
+        description="Plot a tensor-product surface (geomdl VisMPL 3D)."
     )
     parser.add_argument(
         "-s",
@@ -309,25 +278,30 @@ if __name__ == "__main__":
         help="registered surface example (default: s_shaped_peak_saddle)",
     )
     parser.add_argument(
-        "--backend",
-        choices=("vismpl", "matplotlib", "breakdown"),
-        default="vismpl",
-        help="vismpl: interactive 3D; matplotlib: static breakdown; breakdown: both",
-    )
-    parser.add_argument(
         "--vismpl-style",
         choices=("surface", "wireframe"),
         default="surface",
+        help="VisMPL render style (default: surface)",
     )
-    parser.add_argument("-o", "--save", type=Path, default=None)
+    parser.add_argument(
+        "-o",
+        "--save",
+        type=Path,
+        default=None,
+        help="PNG path (bare filename → outputs/surfaces/; default on -n: outputs/surfaces/<surface>.png)",
+    )
     parser.add_argument("-n", "--no-show", action="store_true")
     parser.add_argument("--delta", type=float, default=0.04, help="geomdl sampling step")
     args = parser.parse_args()
 
     example = load_surface_example(args.surface)
+    save_path = resolve_surface_save_path(
+        args.save,
+        name=args.surface,
+        show=not args.no_show,
+    )
     example.plot(
-        backend=args.backend,
-        save_path=args.save,
+        save_path=save_path,
         show=not args.no_show,
         delta=args.delta,
         vismpl_style=args.vismpl_style,
