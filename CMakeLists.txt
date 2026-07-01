@@ -21,6 +21,7 @@ add_library(mfem_raytracing
     src/bdr_patch_extractor.cpp
     src/bezier_degree_reduction.cpp
     src/b_spline_curve_reduction.cpp
+    src/nurbs_degree_reduction.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -52,6 +53,8 @@ add_executable(run_tests
     tests/test_iga_reference_connectivity.cpp
     tests/test_bdr_patch_extractor.cpp
     tests/test_b_spline_curve_reduction.cpp
+    tests/test_bezier_degree_reduction.cpp
+    tests/test_nurbs_degree_reduction.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 add_test(NAME unit_tests COMMAND run_tests

@@ -94,5 +94,7 @@ void TestLMGenerator();
 void TestIGAReferenceConnectivity();
 void TestBdrPatchExtractor();
 void TestBSplineCurveReduction();
+void TestBezierDegreeReduction();
+void TestNURBSDegreeReduction();
 
 #endif

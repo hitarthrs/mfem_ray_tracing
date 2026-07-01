@@ -46,6 +46,12 @@ int main()
     std::cout << "Running B-spline curve degree reduction tests..." << std::endl;
     TestBSplineCurveReduction();
 
+    std::cout << "Running Bezier degree reduction tests..." << std::endl;
+    TestBezierDegreeReduction();
+
+    std::cout << "Running NURBS degree reduction tests..." << std::endl;
+    TestNURBSDegreeReduction();
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
