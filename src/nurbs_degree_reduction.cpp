@@ -97,6 +97,76 @@ void ProjectFromHomogeneous(const std::vector<std::vector<double>> &homogeneous,
 
 }  // namespace
 
+bool DegreeReduceNURBCurve(int n_control_points,
+                           int degree,
+                           const std::vector<double> &U,
+                           const std::vector<std::vector<double>> &control_points,
+                           const std::vector<double> &weights,
+                           std::vector<std::vector<double>> &pw_out,
+                           std::vector<double> &weights_out,
+                           std::vector<double> &uh,
+                           std::vector<double> &error_array,
+                           double tol)
+{
+    if (degree < 2)
+    {
+        throw std::invalid_argument("DegreeReduceNURBCurve: expected degree >= 2");
+    }
+    if (static_cast<int>(control_points.size()) != n_control_points)
+    {
+        throw std::invalid_argument("DegreeReduceNURBCurve: control point count mismatch");
+    }
+    if (weights.size() != control_points.size())
+    {
+        throw std::invalid_argument("DegreeReduceNURBCurve: weights/control point count mismatch");
+    }
+    if (control_points.empty())
+    {
+        throw std::invalid_argument("DegreeReduceNURBCurve: control point list is empty");
+    }
+
+    const int homog_dim = static_cast<int>(control_points.front().size()) + 1;
+    if (homog_dim < 2)
+    {
+        throw std::invalid_argument("DegreeReduceNURBCurve: spatial dimension must be >= 1");
+    }
+
+    std::vector<std::vector<double>> qw_hom(
+        static_cast<std::size_t>(n_control_points),
+        std::vector<double>(static_cast<std::size_t>(homog_dim), 0.0));
+    for (int i = 0; i < n_control_points; ++i)
+    {
+        if (control_points[static_cast<std::size_t>(i)].size() != static_cast<std::size_t>(homog_dim - 1))
+        {
+            throw std::invalid_argument("DegreeReduceNURBCurve: inconsistent control point dimension");
+        }
+        const double w = weights[static_cast<std::size_t>(i)];
+        for (int d = 0; d < homog_dim - 1; ++d)
+        {
+            qw_hom[static_cast<std::size_t>(i)][static_cast<std::size_t>(d)] =
+                control_points[static_cast<std::size_t>(i)][static_cast<std::size_t>(d)] * w;
+        }
+        qw_hom[static_cast<std::size_t>(i)][static_cast<std::size_t>(homog_dim - 1)] = w;
+    }
+
+    std::vector<std::vector<double>> pw_hom;
+    if (!DegreeReduceCurve(n_control_points,
+                           degree,
+                           U,
+                           qw_hom,
+                           homog_dim,
+                           pw_hom,
+                           uh,
+                           error_array,
+                           tol))
+    {
+        return false;
+    }
+
+    ProjectFromHomogeneous(pw_hom, pw_out, weights_out);
+    return true;
+}
+
 bool DegreeReduceNURBCurve(mfem::NURBSPatch &patch,
                            std::vector<std::vector<double>> &pw_out,
                            std::vector<double> &weights_out,
@@ -125,23 +195,20 @@ bool DegreeReduceNURBCurve(mfem::NURBSPatch &patch,
     const std::vector<std::vector<double>> qw_hom =
         ReadHomogeneousFromPatch(patch, n, homog_dim);
 
-    // --- A5.11 on homogeneous coordinates (polynomial DegreeReduceCurve) -------
-    std::vector<std::vector<double>> pw_hom;
-    if (!DegreeReduceCurve(n,
-                           degree,
-                           U,
-                           qw_hom,
-                           homog_dim,
-                           pw_hom,
-                           uh,
-                           error_array,
-                           tol))
+    std::vector<std::vector<double>> control_points(static_cast<std::size_t>(n),
+                                                    std::vector<double>(static_cast<std::size_t>(homog_dim - 1), 0.0));
+    std::vector<double> weights(static_cast<std::size_t>(n), 1.0);
+    for (int i = 0; i < n; ++i)
     {
-        // Per-knot error exceeded tol inside the A5.11 scan.
-        return false;
+        const double w = qw_hom[static_cast<std::size_t>(i)][static_cast<std::size_t>(homog_dim - 1)];
+        weights[static_cast<std::size_t>(i)] = w;
+        for (int d = 0; d < homog_dim - 1; ++d)
+        {
+            control_points[static_cast<std::size_t>(i)][static_cast<std::size_t>(d)] =
+                qw_hom[static_cast<std::size_t>(i)][static_cast<std::size_t>(d)] / w;
+        }
     }
 
-    // --- Output: project reduced homogeneous controls to (P, W) ----------------
-    ProjectFromHomogeneous(pw_hom, pw_out, weights_out);
-    return true;
+    return DegreeReduceNURBCurve(
+        n, degree, U, control_points, weights, pw_out, weights_out, uh, error_array, tol);
 }

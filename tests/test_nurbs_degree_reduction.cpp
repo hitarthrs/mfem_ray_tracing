@@ -173,7 +173,9 @@ void RunGoldenCase(const GoldenCase &golden, double cp_tol = 1e-9, double err_to
 void TestNURBSDegreeReduction()
 {
     RunGoldenCase(P6ToP5MultiplePeakUnified());
+    RunGoldenCase(P4ToP3SShapedUnified());
     RunGoldenCase(P4ToP3MultiplePeakUnified());
+    RunGoldenCase(P4ToP3SinglePeakUniformUnified());
     RunGoldenCase(P4ToP3SinglePeakTrailingUnified());
     RunGoldenCase(P4ToP3SemicircleRational());
     RunGoldenCase(P6ToP5CircleRational());

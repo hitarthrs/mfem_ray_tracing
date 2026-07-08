@@ -96,5 +96,11 @@ void TestBdrPatchExtractor();
 void TestBSplineCurveReduction();
 void TestBezierDegreeReduction();
 void TestNURBSDegreeReduction();
+void TestCurveDegreeReduction();
+void TestSurfaceDegreeReduction();
+
+#ifdef MFEM_RAYTRACING_ENABLE_EMBREE
+void TestBilinearIntersect();
+#endif
 
 #endif

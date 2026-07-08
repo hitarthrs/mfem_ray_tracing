@@ -32,6 +32,17 @@
  *
  * Knot vector and degree are read from patch.GetKV(0).
  */
+bool DegreeReduceNURBCurve(int n_control_points,
+                           int degree,
+                           const std::vector<double> &U,
+                           const std::vector<std::vector<double>> &control_points,
+                           const std::vector<double> &weights,
+                           std::vector<std::vector<double>> &pw_out,
+                           std::vector<double> &weights_out,
+                           std::vector<double> &uh,
+                           std::vector<double> &error_array,
+                           double tol = 1e300);
+
 bool DegreeReduceNURBCurve(mfem::NURBSPatch &patch,
                            std::vector<std::vector<double>> &pw_out,
                            std::vector<double> &weights_out,

@@ -52,6 +52,17 @@ int main()
     std::cout << "Running NURBS degree reduction tests..." << std::endl;
     TestNURBSDegreeReduction();
 
+    std::cout << "Running curve degree reduction tests..." << std::endl;
+    TestCurveDegreeReduction();
+
+    std::cout << "Running surface degree reduction tests..." << std::endl;
+    TestSurfaceDegreeReduction();
+
+#ifdef MFEM_RAYTRACING_ENABLE_EMBREE
+    std::cout << "Running Embree bilinear patch intersection tests..." << std::endl;
+    TestBilinearIntersect();
+#endif
+
     if (g_failures == 0)
     {
         std::cout << "All tests passed." << std::endl;
