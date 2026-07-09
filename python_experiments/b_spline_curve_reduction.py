@@ -1,5 +1,5 @@
 """
-B-spline curve degree reduction (Piegl & Tiller, *The NURBS Book*, Sec. 5.6 / Alg. A5.9).
+B-spline curve degree reduction (Piegl & Tiller, *The NURBS Book*, Sec. 5.6 / Alg. A5.11).
 
 Pipeline:
   1. Scan the input knot vector U; at each distinct knot, extract the current span
@@ -53,7 +53,7 @@ def DegreeReduceCurve(
     n_control_points : int
         Number of input control points n (not counting phantom book padding).
     degree : int
-        Input degree p (>= 2). Local buffers are sized as in A5.9:
+        Input degree p (>= 2). Local buffers are sized as in A5.11:
         ``bpts[p+1]``, ``Nextbpts[p-1]``, ``rbpts[p]``, ``alphas[p-1]``, ``e[m]``.
     U : np.ndarray
         Knot vector of length ``n + p + 1`` (standard open knot count).
@@ -66,13 +66,16 @@ def DegreeReduceCurve(
     Returns
     -------
     (Pw, Uh, error_array) on success, or ``1`` if tolerance is exceeded.
+
+    ``Pw`` and ``Uh`` are trimmed to the active lengths written by A5.11 (``cind``,
+    ``kind``); no trailing zero padding.
     """
     dim = Qw.shape[1]
     p = int(degree)
     if p < 2:
         raise ValueError("DegreeReduceCurve requires input degree p >= 2")
 
-    # --- Alg. A5.9 initialization (reduced degree ph = p - 1) -----------------
+    # --- Alg. A5.11 initialization (reduced degree ph = p - 1) -----------------
     ph = p - 1
     mh = ph  # last index in Uh that has been written; grows when knots are inserted
 
@@ -107,7 +110,7 @@ def DegreeReduceCurve(
     Uh = np.zeros(uh_len, dtype=float)
     Uh[0 : ph + 1] = U[0]  # left end: ph+1 copies of U[0]
 
-    # Local arrays (Piegl & Tiller A5.9): fixed sizes in terms of input degree p
+    # Local arrays (Piegl & Tiller A5.11): fixed sizes in terms of input degree p
     bpts = np.zeros((p + 1, dim), dtype=float)  # bpts[p+1]
     bpts[:] = Qw_work[: p + 1]
 
@@ -144,8 +147,12 @@ def DegreeReduceCurve(
         if r > 0:
             numer = U[b] - U[a]
 
-            # alphas[k-mult-1] for k = p, p-1, ..., mult+1 (at most p-1 entries)
-            for k in range(p, mult-1, -1):
+            # alphas[k-mult-1] for k = p, p-1, ..., mult+1 (at most p-1 entries).
+            # NOTE: the loop must stop at k = mult+1 (book A5.6/A5.11); running it
+            # through k = mult writes alphas[-1], which numpy wraps around to
+            # alphas[p-2] and silently corrupts the insertion for interior knots
+            # of multiplicity 1.
+            for k in range(p, mult, -1):
                 alphas[k - mult - 1] = numer / (U[a + k] - U[a])
 
             for j in range(1, r + 1):
@@ -230,9 +237,10 @@ def DegreeReduceCurve(
             for i in range(0, ph + 1):
                 Uh[kind + i] = U[b]
 
-    nh = mh - ph - 1  # book: count of reduced interior knots (unused here for now)
-
-    return Pw, Uh, error_array
+    # A5.11 uses fixed buffers; cind / kind are the active lengths (book counters).
+    n_active = cind
+    uh_active = kind + ph + 1
+    return Pw[:n_active].copy(), Uh[:uh_active].copy(), error_array
 
 
 
