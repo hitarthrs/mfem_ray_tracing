@@ -1,3 +1,9 @@
+/**
+ * Error-budget policies for iterative multi-step reduction.
+ *
+ * Not used by single-step curve reduction; kept for surface multi-step drivers.
+ */
+
 #include "curve_reduction_error_budget.hpp"
 
 #include <algorithm>

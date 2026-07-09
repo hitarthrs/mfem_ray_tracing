@@ -1,3 +1,10 @@
+/**
+ * Adaptive single-step curve reduction (Python approach_1).
+ *
+ * Probes one-step A5.11, splits at the midpoint of the worst knot span when
+ * peak error exceeds the budget, then recurses on left/right subcurves.
+ */
+
 #include "curve_degree_reduction.hpp"
 
 #include "curve_reduction_domain.hpp"
@@ -6,9 +13,11 @@
 #include "nurbs_degree_reduction.hpp"
 
 #include <algorithm>
+#include <future>
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 
 namespace mfem_raytracing
 {
@@ -24,6 +33,11 @@ struct ReductionOutput
     double segment_error = 0.0;
 };
 
+struct ParallelConfig
+{
+    unsigned int max_async_depth = 0;
+};
+
 double SegmentError(const std::vector<double> &error_array)
 {
     double peak = 0.0;
@@ -34,6 +48,7 @@ double SegmentError(const std::vector<double> &error_array)
     return peak;
 }
 
+// Dispatch to polynomial or NURBS one-step kernel (p -> p-1).
 ReductionOutput ReduceCurveOneStep(const CurveData &curve, double tol)
 {
     ValidateCurveData(curve, "ReduceCurveOneStep");
@@ -103,6 +118,7 @@ ReductionOutput ReduceCurveOneStep(const CurveData &curve, double tol)
     return output;
 }
 
+// Split site: midpoint of the knot span containing the largest A5.11 error entry.
 std::optional<std::tuple<int, double, double, double>>
 MidpointKnotForMaxError(const std::vector<double> &knotvector,
                         int degree,
@@ -138,6 +154,7 @@ MidpointKnotForMaxError(const std::vector<double> &knotvector,
     return std::nullopt;
 }
 
+// Recursive core; piece_global tracks this subcurve in root parameter coordinates.
 void PeakErrorSingleStepImpl(const CurveData &curve,
                              const std::pair<double, double> &piece_global,
                              double max_error,
@@ -218,6 +235,122 @@ void PeakErrorSingleStepImpl(const CurveData &curve,
     PeakErrorSingleStepImpl(right, right_global, max_error, options, depth + 1, segments);
 }
 
+ParallelConfig MakeParallelConfig()
+{
+    ParallelConfig config;
+    const unsigned int hw = std::thread::hardware_concurrency();
+    if (hw <= 1)
+    {
+        config.max_async_depth = 0;
+        return config;
+    }
+
+    unsigned int depth = 0;
+    unsigned int tasks = 1;
+    while (tasks < hw)
+    {
+        tasks <<= 1U;
+        ++depth;
+    }
+    config.max_async_depth = depth;
+    return config;
+}
+
+std::vector<ReducedCurveSegment> PeakErrorSingleStepOptimizedImpl(
+    const CurveData &curve,
+    const std::pair<double, double> &piece_global,
+    double max_error,
+    const PeakErrorSingleStepOptions &options,
+    int depth,
+    const ParallelConfig &parallel)
+{
+    if (curve.degree < 2)
+    {
+        throw std::invalid_argument("PeakErrorSingleStepOptimizedImpl: degree must be >= 2");
+    }
+
+    const double span_width = curve.domain.second - curve.domain.first;
+    if (span_width < options.min_span_width)
+    {
+        throw std::runtime_error(
+            "PeakErrorSingleStepOptimizedImpl: span narrower than min_span_width");
+    }
+
+    const ReductionOutput probe =
+        ReduceCurveOneStep(curve, std::numeric_limits<double>::infinity());
+    const double peak_error = SegmentError(probe.error_array);
+
+    // If the probe already satisfies the requested tolerance, reuse it directly.
+    if (peak_error <= max_error)
+    {
+        return {{probe.curve, probe.segment_error, piece_global}};
+    }
+
+    const auto site =
+        MidpointKnotForMaxError(curve.knotvector, curve.degree, probe.error_array);
+    if (!site.has_value())
+    {
+        return {{probe.curve, probe.segment_error, piece_global}};
+    }
+
+    const double u_split_local = std::get<3>(*site);
+    if (u_split_local <= curve.domain.first + kParamTol ||
+        u_split_local >= curve.domain.second - kParamTol)
+    {
+        return {{probe.curve, probe.segment_error, piece_global}};
+    }
+
+    const double u_split_global =
+        GlobalParamFromLocal(u_split_local, piece_global, curve.domain);
+    if ((u_split_global - piece_global.first) < options.min_span_width ||
+        (piece_global.second - u_split_global) < options.min_span_width ||
+        depth >= options.max_depth)
+    {
+        return {{probe.curve, probe.segment_error, piece_global}};
+    }
+
+    const std::pair<double, double> left_global = {piece_global.first, u_split_global};
+    const std::pair<double, double> right_global = {u_split_global, piece_global.second};
+    const CurveData left = ExtractSubcurveGlobal(
+        curve, piece_global, left_global.first, left_global.second);
+    const CurveData right = ExtractSubcurveGlobal(
+        curve, piece_global, right_global.first, right_global.second);
+
+    std::vector<ReducedCurveSegment> left_segments;
+    std::vector<ReducedCurveSegment> right_segments;
+
+    const bool use_async =
+        parallel.max_async_depth > 0 &&
+        static_cast<unsigned int>(depth) < parallel.max_async_depth &&
+        span_width > 4.0 * options.min_span_width;
+    if (use_async)
+    {
+        auto left_future = std::async(std::launch::async,
+                                      [&]() {
+                                          return PeakErrorSingleStepOptimizedImpl(
+                                              left,
+                                              left_global,
+                                              max_error,
+                                              options,
+                                              depth + 1,
+                                              parallel);
+                                      });
+        right_segments = PeakErrorSingleStepOptimizedImpl(
+            right, right_global, max_error, options, depth + 1, parallel);
+        left_segments = left_future.get();
+    }
+    else
+    {
+        left_segments = PeakErrorSingleStepOptimizedImpl(
+            left, left_global, max_error, options, depth + 1, parallel);
+        right_segments = PeakErrorSingleStepOptimizedImpl(
+            right, right_global, max_error, options, depth + 1, parallel);
+    }
+
+    left_segments.insert(left_segments.end(), right_segments.begin(), right_segments.end());
+    return left_segments;
+}
+
 } // namespace
 
 SingleStepReductionResult PeakErrorSingleStep(const CurveData &initial_curve,
@@ -234,6 +367,30 @@ SingleStepReductionResult PeakErrorSingleStep(const CurveData &initial_curve,
     std::vector<ReducedCurveSegment> segments;
     PeakErrorSingleStepImpl(
         initial_curve, initial_curve.domain, max_error, options, 0, segments);
+    std::sort(segments.begin(),
+              segments.end(),
+              [](const ReducedCurveSegment &lhs, const ReducedCurveSegment &rhs) {
+                  return lhs.u_domain.first < rhs.u_domain.first;
+              });
+    return {segments};
+}
+
+SingleStepReductionResult PeakErrorSingleStepOptimized(
+    const CurveData &initial_curve,
+    double max_error,
+    const PeakErrorSingleStepOptions &options)
+{
+    if (max_error < 0.0)
+    {
+        throw std::invalid_argument(
+            "PeakErrorSingleStepOptimized: max_error must be non-negative");
+    }
+
+    ValidateCurveData(initial_curve, "PeakErrorSingleStepOptimized");
+
+    const ParallelConfig parallel = MakeParallelConfig();
+    std::vector<ReducedCurveSegment> segments = PeakErrorSingleStepOptimizedImpl(
+        initial_curve, initial_curve.domain, max_error, options, 0, parallel);
     std::sort(segments.begin(),
               segments.end(),
               [](const ReducedCurveSegment &lhs, const ReducedCurveSegment &rhs) {

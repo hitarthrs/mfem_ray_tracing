@@ -33,6 +33,9 @@ add_library(mfem_raytracing
     src/curve_degree_reduction.cpp
     src/surface_reduction_domain.cpp
     src/surface_degree_reduction.cpp
+    src/surface_multistep_reduction.cpp
+    src/bilinear_leaf_extraction.cpp
+    src/leaf_patch_loader.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -67,6 +70,18 @@ target_link_libraries(print_bdr_elements PRIVATE mfem)
 add_executable(print_bdr_patch_blocks tests/print_bdr_patch_blocks.cpp)
 target_link_libraries(print_bdr_patch_blocks PRIVATE mfem_raytracing)
 
+add_executable(bench_curve_degree_reduction tests/bench_curve_degree_reduction.cpp)
+target_link_libraries(bench_curve_degree_reduction PRIVATE mfem_raytracing)
+
+add_executable(bench_surface_degree_reduction tests/bench_surface_degree_reduction.cpp)
+target_link_libraries(bench_surface_degree_reduction PRIVATE mfem_raytracing)
+
+# Multi-step reduction -> bilinear leaf AABB JSON (demo_leaf_bboxes.py port).
+# Embeds the degree-4 example surfaces from the generated golden fixtures.
+add_executable(export_leaf_bboxes src/export_leaf_bboxes.cpp)
+target_include_directories(export_leaf_bboxes PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+target_link_libraries(export_leaf_bboxes PRIVATE mfem_raytracing)
+
 enable_testing()
 
 add_executable(run_tests
@@ -89,12 +104,22 @@ add_executable(run_tests
     tests/test_nurbs_degree_reduction.cpp
     tests/test_curve_degree_reduction.cpp
     tests/test_surface_degree_reduction.cpp
+    tests/test_surface_multistep_reduction.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 
 if(MFEM_RAYTRACING_ENABLE_EMBREE)
-  target_sources(run_tests PRIVATE tests/test_bilinear_intersect.cpp)
+  target_sources(run_tests PRIVATE
+      tests/test_bilinear_intersect.cpp
+      tests/test_embree_raytracer.cpp
+  )
   target_link_libraries(run_tests PRIVATE mfem_raytracing_embree)
+
+  add_executable(render_leaf_patches src/render_leaf_patches.cpp)
+  target_link_libraries(render_leaf_patches PRIVATE mfem_raytracing_embree mfem_raytracing)
+
+  add_executable(export_scene_json src/export_scene_json.cpp)
+  target_link_libraries(export_scene_json PRIVATE mfem_raytracing_embree mfem_raytracing)
 endif()
 
 add_test(NAME unit_tests COMMAND run_tests

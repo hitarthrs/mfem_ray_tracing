@@ -58,9 +58,15 @@ int main()
     std::cout << "Running surface degree reduction tests..." << std::endl;
     TestSurfaceDegreeReduction();
 
+    std::cout << "Running multi-step surface reduction tests..." << std::endl;
+    TestSurfaceMultistepReduction();
+
 #ifdef MFEM_RAYTRACING_ENABLE_EMBREE
     std::cout << "Running Embree bilinear patch intersection tests..." << std::endl;
     TestBilinearIntersect();
+
+    std::cout << "Running Embree ray tracer tests..." << std::endl;
+    TestEmbreeRayTracer();
 #endif
 
     if (g_failures == 0)

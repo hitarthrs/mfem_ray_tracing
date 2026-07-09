@@ -1,6 +1,8 @@
 #ifndef CURVE_REDUCTION_ERROR_BUDGET_HPP
 #define CURVE_REDUCTION_ERROR_BUDGET_HPP
 
+// Per-step error allocation for multi-step reduction drivers (surface path).
+
 namespace mfem_raytracing
 {
 

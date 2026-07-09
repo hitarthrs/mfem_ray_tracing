@@ -1,3 +1,10 @@
+/**
+ * Curve geometry utilities for adaptive reduction.
+ *
+ * Knot insertion/splitting operates in homogeneous space so polynomial and
+ * rational curves share one code path.
+ */
+
 #include "curve_reduction_domain.hpp"
 
 #include <algorithm>
@@ -132,6 +139,7 @@ int KnotMultiplicity(const std::vector<double> &U, double u)
     return multiplicity;
 }
 
+// Boehm knot insertion (one insertion at parameter u).
 void InsertKnotOnce(std::vector<Point> &control_points,
                     std::vector<double> &knotvector,
                     int degree,
@@ -322,6 +330,7 @@ CurveData ReparameterizeCurve(const CurveData &curve,
 
 std::pair<CurveData, CurveData> SplitCurve(const CurveData &curve, double u)
 {
+    // Insert u to full multiplicity (degree - s), then partition control net.
     ValidateCurveData(curve, "SplitCurve");
     const auto [domain_lo, domain_hi] = curve.domain;
     if (u <= domain_lo + kParamTol || u >= domain_hi - kParamTol)

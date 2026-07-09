@@ -8,6 +8,7 @@
  */
 
 #include "surface_degree_reduction.hpp"
+#include "surface_golden_cases.hpp"
 #include "test_helpers.hpp"
 
 #include <algorithm>
@@ -20,34 +21,6 @@ namespace
 
 using SurfaceCP = std::vector<std::vector<std::vector<double>>>;
 using WeightNet = std::vector<std::vector<double>>;
-using Domain = std::pair<double, double>;
-
-struct SurfaceGolden
-{
-    int degree_u;
-    int degree_v;
-    int dim;
-    SurfaceCP control_points;
-    WeightNet weights;
-    std::vector<double> knotvector_u;
-    std::vector<double> knotvector_v;
-};
-
-struct SingleStepSurfaceSegmentGolden
-{
-    SurfaceGolden surface;
-    double segment_error;
-    Domain u_domain;
-    Domain v_domain;
-};
-
-struct SingleStepSurfaceGoldenCase
-{
-    std::string name;
-    SurfaceGolden input;
-    double max_error;
-    std::vector<SingleStepSurfaceSegmentGolden> segments;
-};
 
 void CheckSurfaceControlPoints(const SurfaceCP &got, const SurfaceCP &expected, double tol)
 {
@@ -107,25 +80,6 @@ void CheckKnots(const std::vector<double> &got,
                    expected[static_cast<std::size_t>(i)],
                    tol);
     }
-}
-
-mfem_raytracing::SurfaceData MakeSurfaceData(const SurfaceGolden &golden)
-{
-    mfem_raytracing::SurfaceData surface;
-    surface.degree_u = golden.degree_u;
-    surface.degree_v = golden.degree_v;
-    surface.dim = golden.dim;
-    surface.control_points = golden.control_points;
-    surface.weights = golden.weights;
-    surface.knotvector_u = golden.knotvector_u;
-    surface.knotvector_v = golden.knotvector_v;
-    surface.u_domain = {golden.knotvector_u[static_cast<std::size_t>(golden.degree_u)],
-                        golden.knotvector_u[golden.knotvector_u.size() -
-                                            static_cast<std::size_t>(golden.degree_u) - 1]};
-    surface.v_domain = {golden.knotvector_v[static_cast<std::size_t>(golden.degree_v)],
-                        golden.knotvector_v[golden.knotvector_v.size() -
-                                            static_cast<std::size_t>(golden.degree_v) - 1]};
-    return surface;
 }
 
 void CheckSurfaceData(const mfem_raytracing::SurfaceData &got,

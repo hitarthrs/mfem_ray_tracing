@@ -1,0 +1,43 @@
+#ifndef MFEM_RAYTRACING_EMBREE_LEAF_PATCH_LOADER_HPP
+#define MFEM_RAYTRACING_EMBREE_LEAF_PATCH_LOADER_HPP
+
+#include "embree/bilinear_patch_geometry.hpp"
+
+#include <string>
+#include <vector>
+
+namespace mfem_raytracing
+{
+
+/// One bilinear leaf from a multi-step surface degree reduction, as exported by
+/// python_experiments/multiple_step_degree_reduction_surfaces (d4_leaf_bboxes.json).
+struct LeafPatch
+{
+    BilinearPatchPrimitive patch;
+    int index = -1;
+    /// Where this leaf's [0, 1]^2 parameters live on the original surface.
+    double u_domain_global[2] = {0.0, 1.0};
+    double v_domain_global[2] = {0.0, 1.0};
+    double total_error = 0.0;
+    AxisAlignedBounds bbox;
+};
+
+/// A full leaf-patch scene loaded from JSON.
+struct LeafPatchScene
+{
+    std::string surface_name;
+    double max_error = 0.0;
+    AxisAlignedBounds scene_bbox;
+    std::vector<LeafPatch> leaves;
+
+    /// Just the patches, in leaf order, ready for EmbreeRayTracer::RegisterPatches.
+    std::vector<BilinearPatchPrimitive> Patches() const;
+};
+
+/// Load a leaf-bbox JSON export ("leaves" array of degree-(1,1) patches).
+/// Throws std::runtime_error on I/O or parse failure.
+LeafPatchScene LoadLeafPatchScene(const std::string &json_path);
+
+} // namespace mfem_raytracing
+
+#endif
