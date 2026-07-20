@@ -47,9 +47,9 @@ When built with Embree enabled:
 - **Multi-hit** continuation (`IntersectAll`): a ray that pierces one patch can keep going and hit others (e.g. front and back of a torus)
 - Tools to **render** leaf scenes (PPM) and **export** ray grids for interactive viewers
 
-### 4. Supporting IGA / mesh utilities
+### 4. Supporting mesh utilities
 
-Cartesian mesh builders, AABB intersection, element extractors, IEN / ID / LM generators, Kronecker products, and NURBS mesh helpers used by the reduction and ray-tracing paths.
+Cartesian mesh builders and NURBS mesh helpers used by examples and tests.
 
 ---
 

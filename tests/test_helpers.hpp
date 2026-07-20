@@ -80,19 +80,8 @@ inline bool FindElemAndIP(const Ray &ray,
     return elem >= 0;
 }
 
-void TestRay();
-void TestIntersectAABB();
 void TestCartesianMesh();
-void TestRayTrace();
 void TestNURBSMesh();
-void TestBilinearIntersection();
-void TestElementExtractor();
-void TestKroneckerProduct();
-void TestIENGenerator();
-void TestIDGenerator();
-void TestLMGenerator();
-void TestIGAReferenceConnectivity();
-void TestBdrPatchExtractor();
 void TestBSplineCurveReduction();
 void TestBezierDegreeReduction();
 void TestNURBSDegreeReduction();

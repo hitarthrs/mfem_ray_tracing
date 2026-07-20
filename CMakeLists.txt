@@ -12,19 +12,11 @@ option(MFEM_RAYTRACING_ENABLE_EMBREE
        "Build Embree ray tracing library (src/embree)" OFF)
 set(EMBREE_DIR "" CACHE PATH "Embree install prefix (optional)")
 
+# Core library: degree reduction → watertight bilinear leaves (+ mesh helpers).
 add_library(mfem_raytracing
-    src/intersect_AABB.cpp
     src/cartesian_mesh_builder.cpp
     src/cartesian_mesh_naming.cpp
-    src/ray_tracing.cpp
     src/nurbs_mesh_operations.cpp
-    src/bilinear_intersection.cpp
-    src/element_extractor.cpp
-    src/kronecker_product.cpp
-    src/ien_generator.cpp
-    src/id_generator.cpp
-    src/lm_generator.cpp
-    src/bdr_patch_extractor.cpp
     src/bezier_degree_reduction.cpp
     src/b_spline_curve_reduction.cpp
     src/nurbs_degree_reduction.cpp
@@ -64,12 +56,6 @@ endif()
 add_executable(make_cart_mesh src/make_cart_mesh.cpp)
 target_link_libraries(make_cart_mesh PRIVATE mfem_raytracing)
 
-add_executable(print_bdr_elements tests/print_bdr_elements.cpp)
-target_link_libraries(print_bdr_elements PRIVATE mfem)
-
-add_executable(print_bdr_patch_blocks tests/print_bdr_patch_blocks.cpp)
-target_link_libraries(print_bdr_patch_blocks PRIVATE mfem_raytracing)
-
 add_executable(bench_curve_degree_reduction tests/bench_curve_degree_reduction.cpp)
 target_link_libraries(bench_curve_degree_reduction PRIVATE mfem_raytracing)
 
@@ -77,7 +63,6 @@ add_executable(bench_surface_degree_reduction tests/bench_surface_degree_reducti
 target_link_libraries(bench_surface_degree_reduction PRIVATE mfem_raytracing)
 
 # Multi-step reduction -> bilinear leaf AABB JSON (demo_leaf_bboxes.py port).
-# Embeds the degree-4 example surfaces from the generated golden fixtures.
 add_executable(export_leaf_bboxes src/export_leaf_bboxes.cpp)
 target_include_directories(export_leaf_bboxes PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 target_link_libraries(export_leaf_bboxes PRIVATE mfem_raytracing)
@@ -91,19 +76,8 @@ enable_testing()
 
 add_executable(run_tests
     tests/main.cpp
-    tests/test_ray.cpp
-    tests/test_intersect_aabb.cpp
     tests/test_cartesian_mesh.cpp
-    tests/test_ray_trace.cpp
     tests/test_nurbs_mesh.cpp
-    tests/test_bilinear_intersection.cpp
-    tests/test_element_extractor.cpp
-    tests/test_kronecker_product.cpp
-    tests/test_ien_generator.cpp
-    tests/test_id_generator.cpp
-    tests/test_lm_generator.cpp
-    tests/test_iga_reference_connectivity.cpp
-    tests/test_bdr_patch_extractor.cpp
     tests/test_b_spline_curve_reduction.cpp
     tests/test_bezier_degree_reduction.cpp
     tests/test_nurbs_degree_reduction.cpp
