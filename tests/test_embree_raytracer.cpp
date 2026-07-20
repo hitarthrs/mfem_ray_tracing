@@ -89,6 +89,14 @@ void TestNearestOfTwoGeometriesWins()
     CHECK(far_hit.hit);
     CHECK(far_hit.geom_id == far_id);
     CHECK_NEAR(far_hit.t, 5.0, 1e-4);
+
+    // Continuing past the first hit must report both surfaces.
+    const std::vector<RayHitRecord> all = tracer.IntersectAll(origin, direction);
+    CHECK(all.size() == 2);
+    CHECK(all[0].geom_id == near_id);
+    CHECK_NEAR(all[0].t, 2.0, 1e-4);
+    CHECK(all[1].geom_id == far_id);
+    CHECK_NEAR(all[1].t, 5.0, 1e-4);
 }
 
 void TestUnnormalizedDirectionThroughScene()

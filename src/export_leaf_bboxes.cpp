@@ -43,6 +43,8 @@ void PrintUsage()
               << "      --degree-out N     target degree (default: 1)\n"
               << "      --max-depth N      peak-error splits per step (default: 25)\n"
               << "      --min-span-width X minimum parameter span (default: 1e-8)\n"
+              << "      --error-combination sum|max   leaf error accounting (default: sum)\n"
+              << "      --no-rational-tol-correction  disable Piegl & Tiller Eq. 5.30\n"
               << "      --json PATH        write leaf bbox JSON to PATH\n"
               << "surfaces:\n";
     for (const auto &entry : kExampleSurfaces)
@@ -96,6 +98,29 @@ int main(int argc, char **argv)
         else if (arg == "--min-span-width")
         {
             options.single_step.min_span_width = std::stod(next(arg.c_str()));
+        }
+        else if (arg == "--error-combination")
+        {
+            const std::string mode = next(arg.c_str());
+            if (mode == "sum")
+            {
+                options.single_step.error_combination =
+                    mfem_raytracing::SurfaceErrorCombination::Sum;
+            }
+            else if (mode == "max")
+            {
+                options.single_step.error_combination =
+                    mfem_raytracing::SurfaceErrorCombination::Max;
+            }
+            else
+            {
+                std::cerr << "error: --error-combination must be 'sum' or 'max'\n";
+                return 1;
+            }
+        }
+        else if (arg == "--no-rational-tol-correction")
+        {
+            options.single_step.rational_tol_correction = false;
         }
         else if (arg == "--json")
         {

@@ -82,6 +82,11 @@ add_executable(export_leaf_bboxes src/export_leaf_bboxes.cpp)
 target_include_directories(export_leaf_bboxes PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 target_link_libraries(export_leaf_bboxes PRIVATE mfem_raytracing)
 
+# Watertight (conforming + coalesce) bilinear patch export for any (p, q)
+# surface; input surfaces from python_experiments/export_surface_inputs.py.
+add_executable(export_bilinear_patches src/export_bilinear_patches.cpp)
+target_link_libraries(export_bilinear_patches PRIVATE mfem_raytracing)
+
 enable_testing()
 
 add_executable(run_tests

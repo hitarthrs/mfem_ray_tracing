@@ -434,4 +434,76 @@ LeafPatchScene LoadLeafPatchScene(const std::string &json_path)
     return scene;
 }
 
+SurfaceData LoadSurfaceDataJson(const std::string &json_path)
+{
+    std::ifstream stream(json_path);
+    if (!stream)
+    {
+        throw std::runtime_error("surface JSON: cannot open '" + json_path + "'");
+    }
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    const JsonValue root = JsonParser(buffer.str()).Parse();
+
+    SurfaceData surface;
+    surface.degree_u = static_cast<int>(root.At("degree_u").AsNumber());
+    surface.degree_v = static_cast<int>(root.At("degree_v").AsNumber());
+    surface.dim = 3;
+
+    const auto &rows = root.At("control_points").AsArray();
+    surface.control_points.resize(rows.size());
+    for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+        const auto &cols = rows[i].AsArray();
+        surface.control_points[i].resize(cols.size());
+        for (std::size_t j = 0; j < cols.size(); ++j)
+        {
+            const auto &comps = cols[j].AsArray();
+            if (comps.size() != 3)
+            {
+                throw std::runtime_error("surface JSON: expected 3D control points");
+            }
+            surface.control_points[i][j] = {comps[0].AsNumber(), comps[1].AsNumber(),
+                                            comps[2].AsNumber()};
+        }
+    }
+
+    const JsonValue &weights = root.At("weights");
+    if (!weights.IsNull())
+    {
+        const auto &w_rows = weights.AsArray();
+        surface.weights.resize(w_rows.size());
+        for (std::size_t i = 0; i < w_rows.size(); ++i)
+        {
+            const auto &w_cols = w_rows[i].AsArray();
+            surface.weights[i].resize(w_cols.size());
+            for (std::size_t j = 0; j < w_cols.size(); ++j)
+            {
+                surface.weights[i][j] = w_cols[j].AsNumber();
+            }
+        }
+    }
+
+    for (const JsonValue &k : root.At("knotvector_u").AsArray())
+    {
+        surface.knotvector_u.push_back(k.AsNumber());
+    }
+    for (const JsonValue &k : root.At("knotvector_v").AsArray())
+    {
+        surface.knotvector_v.push_back(k.AsNumber());
+    }
+
+    const auto pu = static_cast<std::size_t>(surface.degree_u);
+    const auto pv = static_cast<std::size_t>(surface.degree_v);
+    if (surface.knotvector_u.size() <= 2 * pu + 1 || surface.knotvector_v.size() <= 2 * pv + 1)
+    {
+        throw std::runtime_error("surface JSON: knot vectors too short for the degrees");
+    }
+    surface.u_domain = {surface.knotvector_u[pu],
+                        surface.knotvector_u[surface.knotvector_u.size() - pu - 1]};
+    surface.v_domain = {surface.knotvector_v[pv],
+                        surface.knotvector_v[surface.knotvector_v.size() - pv - 1]};
+    return surface;
+}
+
 } // namespace mfem_raytracing

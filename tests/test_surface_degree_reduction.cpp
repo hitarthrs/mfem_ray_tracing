@@ -100,8 +100,13 @@ void CheckSurfaceData(const mfem_raytracing::SurfaceData &got,
 void RunSingleStepSurfaceCase(const SingleStepSurfaceGoldenCase &golden)
 {
     const mfem_raytracing::SurfaceData input = MakeSurfaceData(golden.input);
+    // Fixtures use the legacy accounting (max, no Eq. 5.30); the sum + 5.30
+    // defaults are exercised by the multi-step golden and deviation tests.
+    mfem_raytracing::PeakErrorSurfaceSingleStepOptions legacy;
+    legacy.error_combination = mfem_raytracing::SurfaceErrorCombination::Max;
+    legacy.rational_tol_correction = false;
     const mfem_raytracing::SingleStepSurfaceReductionResult result =
-        mfem_raytracing::PeakErrorSurfaceSingleStep(input, golden.max_error);
+        mfem_raytracing::PeakErrorSurfaceSingleStep(input, golden.max_error, legacy);
 
     CHECK(static_cast<int>(result.segments.size()) == static_cast<int>(golden.segments.size()));
     const int count = std::min(static_cast<int>(result.segments.size()),

@@ -2,6 +2,7 @@
 #define MFEM_RAYTRACING_EMBREE_LEAF_PATCH_LOADER_HPP
 
 #include "embree/bilinear_patch_geometry.hpp"
+#include "surface_reduction_types.hpp"
 
 #include <string>
 #include <vector>
@@ -37,6 +38,13 @@ struct LeafPatchScene
 /// Load a leaf-bbox JSON export ("leaves" array of degree-(1,1) patches).
 /// Throws std::runtime_error on I/O or parse failure.
 LeafPatchScene LoadLeafPatchScene(const std::string &json_path);
+
+/// Load a full input NURBS surface from JSON (as written by
+/// python_experiments/export_surface_inputs.py):
+///   { "name", "degree_u", "degree_v", "control_points"[nu][nv][3],
+///     "weights" (null or [nu][nv]), "knotvector_u", "knotvector_v" }
+/// Domains are derived from the clamped knot vectors.
+SurfaceData LoadSurfaceDataJson(const std::string &json_path);
 
 } // namespace mfem_raytracing
 

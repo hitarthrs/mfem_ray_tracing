@@ -47,7 +47,7 @@ void SegmentGlobalDomains(const ReducedSurfaceSegment &segment,
 
 } // namespace
 
-MultipleStepSurfaceReductionResult DegreeReduceMultipleSteps(
+MultipleStepSurfaceReductionResult DegreeReduceMultipleStepsNonConforming(
     const SurfaceData &initial_surface,
     int n_steps,
     double max_error,

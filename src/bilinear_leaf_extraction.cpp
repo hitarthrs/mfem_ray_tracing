@@ -6,6 +6,8 @@
 
 #include "bilinear_leaf_extraction.hpp"
 
+#include "surface_conforming_reduction.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -218,12 +220,25 @@ BilinearLeafCollection ReduceSurfaceToBilinearLeaves(const SurfaceData &initial_
                                                      double max_error,
                                                      const BilinearLeafReductionOptions &options)
 {
-    MultiStepSurfaceReductionOptions multi_options;
-    multi_options.budget_policy = BudgetPolicyFromBackendName(options.backend_name);
-    multi_options.single_step = options.single_step;
-
-    const MultipleStepSurfaceReductionResult result =
-        DegreeReduceMultipleSteps(initial_surface, n_steps, max_error, multi_options);
+    MultipleStepSurfaceReductionResult result;
+    if (options.conforming)
+    {
+        ConformingReductionOptions conf;
+        conf.budget_policy = BudgetPolicyFromBackendName(options.backend_name);
+        conf.single_step = options.single_step;
+        conf.coalesce = options.coalesce;
+        conf.target_degree_u = std::max(1, initial_surface.degree_u - n_steps);
+        conf.target_degree_v = std::max(1, initial_surface.degree_v - n_steps);
+        result = DegreeReduceMultipleStepsConforming(initial_surface, max_error, conf);
+    }
+    else
+    {
+        MultiStepSurfaceReductionOptions multi_options;
+        multi_options.budget_policy = BudgetPolicyFromBackendName(options.backend_name);
+        multi_options.single_step = options.single_step;
+        result = DegreeReduceMultipleStepsNonConforming(initial_surface, n_steps, max_error,
+                                                        multi_options);
+    }
 
     BilinearLeafCollection collection;
     collection.max_error = max_error;

@@ -76,6 +76,11 @@ struct BilinearLeafReductionOptions
     std::string backend_name = "approach_4";
     PeakErrorSurfaceSingleStepOptions single_step;
     bool enforce_nonneg_weights = true;
+    /// Watertight tensor-grid driver (DegreeReduceMultipleStepsConforming)
+    /// instead of the legacy non-conforming per-branch splitting.
+    bool conforming = false;
+    /// Greedy full-line coalescing after the conforming grid build.
+    bool coalesce = true;
 };
 
 /// Full pipeline: multi-step reduction to degrees (1, 1) + leaf extraction.

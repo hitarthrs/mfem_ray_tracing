@@ -68,7 +68,7 @@ struct MultiStepSurfaceReductionOptions
  * MultipleStepSurfaceReductionFailure when `n_steps` exceeds
  * min(degree_u, degree_v) - 1.
  */
-MultipleStepSurfaceReductionResult DegreeReduceMultipleSteps(
+MultipleStepSurfaceReductionResult DegreeReduceMultipleStepsNonConforming(
     const SurfaceData &initial_surface,
     int n_steps,
     double max_error,

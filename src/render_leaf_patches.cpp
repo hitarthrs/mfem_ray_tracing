@@ -1,6 +1,8 @@
 // Renders a bilinear leaf-patch scene (d4_leaf_bboxes.json export) with the
 // Embree ray tracer and writes PPM images:
-//   <prefix>_shaded.ppm  — perspective view, Lambertian shading from hit normals
+//   <prefix>_shaded.ppm  — perspective view, patch-id color × Lambertian
+//   <prefix>_surface.ppm — perspective view, solid albedo × Lambertian
+//                          (shows the surface shape from ray hits only)
 //   <prefix>_uv.ppm      — perspective view, colored by global (u, v) on the
 //                          original surface (continuity across leaf seams is a
 //                          visual check of the uv mapping)
@@ -141,8 +143,11 @@ int main(int argc, char **argv)
     const Vec3 light_dir = Normalized(Vec3{0.35, -0.5, 0.85});
 
     Image shaded(size, size);
+    Image surface(size, size);
     Image uv_view(size, size);
     long hit_count = 0;
+    // Neutral warm albedo so shading (normals from Embree hits) carries the shape.
+    const double albedo_r = 0.82, albedo_g = 0.78, albedo_b = 0.70;
 
     for (int py = 0; py < size; ++py)
     {
@@ -160,6 +165,7 @@ int main(int argc, char **argv)
             {
                 const double sky = 0.12 + 0.10 * (1.0 - (py + 0.5) / size);
                 shaded.Set(px, py, sky, sky, sky + 0.03);
+                surface.Set(px, py, sky, sky, sky + 0.03);
                 uv_view.Set(px, py, sky, sky, sky + 0.03);
                 continue;
             }
@@ -178,6 +184,7 @@ int main(int argc, char **argv)
             double pr, pg, pb;
             PatchIdColor(hit.prim_id, pr, pg, pb);
             shaded.Set(px, py, shade * pr, shade * pg, shade * pb);
+            surface.Set(px, py, shade * albedo_r, shade * albedo_g, shade * albedo_b);
 
             // Global (u, v) on the original surface via the leaf's domain.
             const LeafPatch &leaf = scene.leaves[hit.prim_id];
@@ -217,15 +224,18 @@ int main(int argc, char **argv)
     }
 
     const std::string shaded_path = prefix + "_shaded.ppm";
+    const std::string surface_path = prefix + "_surface.ppm";
     const std::string uv_path = prefix + "_uv.ppm";
     const std::string top_path = prefix + "_top.ppm";
-    if (!shaded.WritePPM(shaded_path) || !uv_view.WritePPM(uv_path) || !top.WritePPM(top_path))
+    if (!shaded.WritePPM(shaded_path) || !surface.WritePPM(surface_path) ||
+        !uv_view.WritePPM(uv_path) || !top.WritePPM(top_path))
     {
         std::cerr << "error: failed to write output images\n";
         return 1;
     }
 
     std::cout << "perspective rays hitting surface: " << hit_count << " / " << (size * size)
-              << "\nwrote " << shaded_path << ", " << uv_path << ", " << top_path << "\n";
+              << "\nwrote " << shaded_path << ", " << surface_path << ", " << uv_path << ", "
+              << top_path << "\n";
     return 0;
 }

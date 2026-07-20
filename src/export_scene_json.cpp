@@ -1,7 +1,7 @@
 // Exports a bilinear leaf-patch scene plus a grid of traced rays to JSON, for
-// the interactive web viewer. Each ray records its origin, direction, first-hit
-// distance (if any), and a far endpoint so the viewer can draw the segment that
-// continues *through* the surface.
+// the interactive web viewer. Each ray records its origin, direction, every hit
+// along the path (multi-patch pierce via IntersectAll), and a far endpoint so
+// the viewer can draw the beam continuing through successive surfaces.
 //
 // Usage: export_scene_json <leaf_bboxes.json> <out.json> [grid_n]
 
@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <vector>
 
 using namespace mfem_raytracing;
 
@@ -106,9 +107,10 @@ int main(int argc, char **argv)
     }
     os << "\n  ],\n";
 
-    // Rays over a grid in the xy footprint.
+    // Rays over a grid in the xy footprint (all hits along each ray).
     os << "  \"rays\": [";
-    long hit_count = 0;
+    long ray_hit_count = 0;   // rays with ≥1 hit
+    long total_hit_count = 0; // sum of intersections across all rays
     bool first_ray = true;
     for (int iy = 0; iy < grid_n; ++iy)
     {
@@ -121,16 +123,30 @@ int main(int argc, char **argv)
             const double y = lo[1] + fy * (hi[1] - lo[1]) - dir[1] * (start_z - hi[2]);
             const double origin[3] = {x, y, start_z};
 
-            const RayHitRecord hit = tracer.Intersect(origin, dir, 0.0, t_end);
+            const std::vector<RayHitRecord> hits = tracer.IntersectAll(origin, dir, 0.0, t_end);
 
             os << (first_ray ? "\n    " : ",\n    ") << "{\"o\":";
             WriteVec(os, origin);
             os << ",\"d\":[" << dir[0] << ',' << dir[1] << ',' << dir[2] << "],\"tEnd\":" << t_end;
-            if (hit.hit)
+            os << ",\"hits\":[";
+            for (std::size_t hi = 0; hi < hits.size(); ++hi)
             {
-                ++hit_count;
-                os << ",\"tHit\":" << hit.t << ",\"prim\":" << hit.prim_id << ",\"n\":";
-                WriteVec(os, hit.Ng);
+                if (hi)
+                {
+                    os << ',';
+                }
+                os << "{\"t\":" << hits[hi].t << ",\"prim\":" << hits[hi].prim_id << ",\"n\":";
+                WriteVec(os, hits[hi].Ng);
+                os << '}';
+            }
+            os << ']';
+            // Backward-compatible first-hit fields for older viewers.
+            if (!hits.empty())
+            {
+                ++ray_hit_count;
+                total_hit_count += static_cast<long>(hits.size());
+                os << ",\"tHit\":" << hits[0].t << ",\"prim\":" << hits[0].prim_id << ",\"n\":";
+                WriteVec(os, hits[0].Ng);
             }
             else
             {
@@ -143,6 +159,7 @@ int main(int argc, char **argv)
     os << "\n  ]\n}\n";
 
     std::cout << "exported " << scene.leaves.size() << " patches, " << (grid_n * grid_n)
-              << " rays (" << hit_count << " hits) -> " << out_path << "\n";
+              << " rays (" << ray_hit_count << " with hits, " << total_hit_count
+              << " total intersections) -> " << out_path << "\n";
     return 0;
 }

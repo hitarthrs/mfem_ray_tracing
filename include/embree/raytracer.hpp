@@ -61,6 +61,16 @@ public:
                            double tnear = 0.0,
                            double tfar = std::numeric_limits<double>::infinity()) const;
 
+    /// All hits along org + t * dir for t in [tnear, tfar], in increasing-t
+    /// order. After each hit the search resumes just past that t so a ray can
+    /// pierce successive patches (e.g. front then back of a torus). Stops after
+    /// `max_hits` or when no further hit is found.
+    std::vector<RayHitRecord> IntersectAll(const double origin[3],
+                                           const double direction[3],
+                                           double tnear = 0.0,
+                                           double tfar = std::numeric_limits<double>::infinity(),
+                                           std::size_t max_hits = 64) const;
+
     /// Whether any geometry occludes the segment t in [tnear, tfar].
     bool Occluded(const double origin[3],
                   const double direction[3],
