@@ -67,6 +67,15 @@ struct JsonValue
         }
         return array_items;
     }
+
+    const std::string &AsString() const
+    {
+        if (type != Type::String)
+        {
+            throw std::runtime_error("leaf patch JSON: expected a string");
+        }
+        return string_value;
+    }
 };
 
 class JsonParser
@@ -269,6 +278,52 @@ private:
                     case 'n': out.push_back('\n'); break;
                     case 'r': out.push_back('\r'); break;
                     case 't': out.push_back('\t'); break;
+                    case 'u':
+                    {
+                        // \uXXXX → UTF-8 (BMP only; enough for our leaf JSON metadata).
+                        if (pos_ + 4 > text_.size())
+                        {
+                            Fail("unterminated unicode escape");
+                        }
+                        unsigned code = 0;
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            const char h = text_[pos_++];
+                            code <<= 4;
+                            if (h >= '0' && h <= '9')
+                            {
+                                code |= static_cast<unsigned>(h - '0');
+                            }
+                            else if (h >= 'a' && h <= 'f')
+                            {
+                                code |= static_cast<unsigned>(h - 'a' + 10);
+                            }
+                            else if (h >= 'A' && h <= 'F')
+                            {
+                                code |= static_cast<unsigned>(h - 'A' + 10);
+                            }
+                            else
+                            {
+                                Fail("invalid unicode escape");
+                            }
+                        }
+                        if (code <= 0x7F)
+                        {
+                            out.push_back(static_cast<char>(code));
+                        }
+                        else if (code <= 0x7FF)
+                        {
+                            out.push_back(static_cast<char>(0xC0 | (code >> 6)));
+                            out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+                        }
+                        else
+                        {
+                            out.push_back(static_cast<char>(0xE0 | (code >> 12)));
+                            out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+                            out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+                        }
+                        break;
+                    }
                     default:
                         Fail("unsupported string escape");
                 }
@@ -342,6 +397,11 @@ LeafPatch ParseLeaf(const JsonValue &leaf_json)
 {
     LeafPatch leaf;
     leaf.index = static_cast<int>(leaf_json.At("index").AsNumber());
+    const auto role_it = leaf_json.object_items.find("role");
+    if (role_it != leaf_json.object_items.end())
+    {
+        leaf.role = role_it->second.AsString();
+    }
     ReadDomain(leaf_json.At("u_domain_global"), leaf.u_domain_global);
     ReadDomain(leaf_json.At("v_domain_global"), leaf.v_domain_global);
     leaf.total_error = leaf_json.At("total_error").AsNumber();
@@ -421,7 +481,18 @@ LeafPatchScene LoadLeafPatchScene(const std::string &json_path)
 
     LeafPatchScene scene;
     scene.surface_name = root.At("surface").string_value;
-    scene.max_error = root.At("max_error").AsNumber();
+    const auto max_err_it = root.object_items.find("max_error");
+    if (max_err_it != root.object_items.end())
+    {
+        scene.max_error = max_err_it->second.AsNumber();
+    }
+    else
+    {
+        // Optional for baked shells that report max_decomp_err instead.
+        const auto decomp_it = root.object_items.find("max_decomp_err");
+        scene.max_error =
+            (decomp_it != root.object_items.end()) ? decomp_it->second.AsNumber() : 0.0;
+    }
     ReadVec3(root.At("scene_bbox_min"), scene.scene_bbox.min);
     ReadVec3(root.At("scene_bbox_max"), scene.scene_bbox.max);
 

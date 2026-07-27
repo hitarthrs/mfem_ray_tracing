@@ -99,6 +99,20 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
 
   add_executable(export_scene_json src/export_scene_json.cpp)
   target_link_libraries(export_scene_json PRIVATE mfem_raytracing_embree mfem_raytracing)
+
+  # Bilinear-seeded vs. naive Newton seeding benchmark (needs the Embree BVH).
+  add_subdirectory(intersection_seeding_benchmark)
+
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(SDL2 QUIET IMPORTED_TARGET sdl2)
+  endif()
+  if(SDL2_FOUND)
+    add_executable(scene_viewer src/scene_viewer.cpp)
+    target_link_libraries(scene_viewer PRIVATE mfem_raytracing_embree mfem_raytracing PkgConfig::SDL2)
+  else()
+    message(STATUS "SDL2 not found; skipping native scene_viewer")
+  endif()
 endif()
 
 add_test(NAME unit_tests COMMAND run_tests

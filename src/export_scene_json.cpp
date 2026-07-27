@@ -66,9 +66,13 @@ int main(int argc, char **argv)
         c /= dlen;
     }
     const double span_z = (hi[2] - lo[2]);
+    const double span_x = (hi[0] - lo[0]);
+    const double span_y = (hi[1] - lo[1]);
+    const double scene_diag = std::sqrt(span_x * span_x + span_y * span_y + span_z * span_z);
     const double start_z = hi[2] + 0.35 * span_z + 1.0;
-    // Distance to fully cross the scene and emerge below the bounding box.
-    const double t_end = (start_z - lo[2] + 0.6 * span_z + 1.0) / std::fabs(dir[2]);
+    // Run well past the box so oblique rays have room to traverse multi-shell
+    // scenes and keep visibly exiting after the final hit.
+    const double t_end = (start_z - lo[2]) / std::fabs(dir[2]) + 4.0 * std::max(1.0, scene_diag);
 
     std::ofstream os(out_path);
     if (!os)

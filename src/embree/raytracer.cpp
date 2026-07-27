@@ -11,6 +11,15 @@ namespace mfem_raytracing
 namespace
 {
 
+constexpr double kHitDedupeAbsoluteTolerance = 1e-5;
+constexpr double kHitDedupeRelativeTolerance = 1e-6;
+
+double HitDedupeTolerance(double a, double b)
+{
+    return std::max(kHitDedupeAbsoluteTolerance,
+                    kHitDedupeRelativeTolerance * std::max(std::fabs(a), std::fabs(b)));
+}
+
 void EmbreeErrorFunc(void * /*user_ptr*/, RTCError code, const char *str)
 {
     if (code != RTC_ERROR_NONE)
@@ -78,7 +87,8 @@ void EmbreeRayTracer::CommitScene()
 RayHitRecord EmbreeRayTracer::Intersect(const double origin[3],
                                         const double direction[3],
                                         double tnear,
-                                        double tfar) const
+                                        double tfar,
+                                        RayQueryDiagnostics *diagnostics) const
 {
     RTCRayHit rayhit{};
     rayhit.ray.org_x = static_cast<float>(origin[0]);
@@ -95,6 +105,21 @@ RayHitRecord EmbreeRayTracer::Intersect(const double origin[3],
     {
         rayhit.hit.instID[level] = RTC_INVALID_GEOMETRY_ID;
     }
+
+    if (diagnostics != nullptr)
+    {
+        *diagnostics = {};
+    }
+    struct DiagnosticsScope
+    {
+        explicit DiagnosticsScope(RayQueryDiagnostics *diagnostics)
+            : previous(SetActiveRayQueryDiagnostics(diagnostics))
+        {
+        }
+        ~DiagnosticsScope() { SetActiveRayQueryDiagnostics(previous); }
+
+        RayQueryDiagnostics *previous;
+    } diagnostics_scope(diagnostics);
 
     rtcIntersect1(scene_, &rayhit);
 
@@ -115,6 +140,93 @@ RayHitRecord EmbreeRayTracer::Intersect(const double origin[3],
     return record;
 }
 
+RayHitRecord EmbreeRayTracer::IntersectBruteForce(const double origin[3],
+                                                  const double direction[3],
+                                                  double tnear,
+                                                  double tfar) const
+{
+    const float origin_f[3] = {static_cast<float>(origin[0]), static_cast<float>(origin[1]),
+                               static_cast<float>(origin[2])};
+    const float direction_f[3] = {static_cast<float>(direction[0]), static_cast<float>(direction[1]),
+                                  static_cast<float>(direction[2])};
+    const float tnear_f = static_cast<float>(tnear);
+    float best_t = static_cast<float>(tfar);
+
+    RayHitRecord record;
+    for (const auto &entry : geometry_slots_)
+    {
+        const unsigned int geom_id = entry.first;
+        const GeometrySlot &slot = *entry.second;
+        for (std::size_t prim_id = 0; prim_id < slot.patches.size(); ++prim_id)
+        {
+            const BilinearPatchRayHit hit = IntersectBilinearPatchDirect(
+                slot.patches[prim_id], origin_f, direction_f, tnear_f, best_t);
+            if (!hit.hit)
+            {
+                continue;
+            }
+            best_t = hit.t;
+            record.hit = true;
+            record.t = hit.t;
+            record.u = hit.u;
+            record.v = hit.v;
+            record.Ng[0] = hit.Ng[0];
+            record.Ng[1] = hit.Ng[1];
+            record.Ng[2] = hit.Ng[2];
+            record.geom_id = geom_id;
+            record.prim_id = static_cast<unsigned int>(prim_id);
+        }
+    }
+    return record;
+}
+
+std::vector<RayHitRecord> EmbreeRayTracer::IntersectAllBruteForce(
+    const double origin[3], const double direction[3], double tnear, double tfar,
+    std::size_t max_hits) const
+{
+    const float origin_f[3] = {static_cast<float>(origin[0]), static_cast<float>(origin[1]),
+                               static_cast<float>(origin[2])};
+    const float direction_f[3] = {static_cast<float>(direction[0]), static_cast<float>(direction[1]),
+                                  static_cast<float>(direction[2])};
+    const float tnear_f = static_cast<float>(tnear);
+    const float tfar_f = static_cast<float>(tfar);
+
+    std::vector<RayHitRecord> hits;
+    for (const auto &entry : geometry_slots_)
+    {
+        const unsigned int geom_id = entry.first;
+        const GeometrySlot &slot = *entry.second;
+        for (std::size_t prim_id = 0; prim_id < slot.patches.size(); ++prim_id)
+        {
+            const BilinearPatchRayHit hit = IntersectBilinearPatchDirect(
+                slot.patches[prim_id], origin_f, direction_f, tnear_f, tfar_f);
+            if (!hit.hit)
+            {
+                continue;
+            }
+            RayHitRecord record;
+            record.hit = true;
+            record.t = hit.t;
+            record.u = hit.u;
+            record.v = hit.v;
+            record.Ng[0] = hit.Ng[0];
+            record.Ng[1] = hit.Ng[1];
+            record.Ng[2] = hit.Ng[2];
+            record.geom_id = geom_id;
+            record.prim_id = static_cast<unsigned int>(prim_id);
+            hits.push_back(record);
+        }
+    }
+    std::sort(hits.begin(), hits.end(), [](const RayHitRecord &a, const RayHitRecord &b) {
+        return a.t < b.t;
+    });
+    if (hits.size() > max_hits)
+    {
+        hits.resize(max_hits);
+    }
+    return hits;
+}
+
 std::vector<RayHitRecord> EmbreeRayTracer::IntersectAll(const double origin[3],
                                                         const double direction[3],
                                                         double tnear,
@@ -132,11 +244,23 @@ std::vector<RayHitRecord> EmbreeRayTracer::IntersectAll(const double origin[3],
         {
             break;
         }
+        // Advance only to the next representable float t. The ray data seen by
+        // Embree and the callback is float, so this excludes the exact same
+        // candidate without skipping a distinct nearby surface.
+        const float next_t = std::nextafter(static_cast<float>(hit.t),
+                                            std::numeric_limits<float>::infinity());
+        cursor = static_cast<double>(next_t);
+        if (!(cursor > hit.t))
+        {
+            break; // defensive guard against a non-finite/non-advancing t
+        }
+
+        if (!hits.empty() && std::fabs(hit.t - hits.back().t) <= HitDedupeTolerance(hit.t, hits.back().t))
+        {
+            // The earlier record is the representative for this crossing.
+            continue;
+        }
         hits.push_back(hit);
-        // Advance past this surface so the same patch is not reported again.
-        // Absolute floor + relative bump covers near and far hits.
-        const double advance = std::max(1e-5, 1e-6 * std::fabs(hit.t));
-        cursor = hit.t + advance;
     }
     return hits;
 }

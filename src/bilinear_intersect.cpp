@@ -18,6 +18,7 @@
 #include "bilinear_intersect.hpp"
 
 #include "embree/bilinear_patch_geometry.hpp"
+#include "embree/raytracer.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -28,6 +29,8 @@ namespace mfem_raytracing
 {
 namespace
 {
+
+thread_local RayQueryDiagnostics *g_active_ray_query_diagnostics = nullptr;
 
 constexpr float kDegeneracyEps = 1e-6f;
 constexpr float kIntersectionTol = 1e-5f;
@@ -66,6 +69,7 @@ struct BilinearPatchHitResult
     float u = 0.0f;
     float v = 0.0f;
     Vec3f Ng = {0.0f, 0.0f, 0.0f};
+    unsigned int reject_reasons = BilinearRejectNone;
 };
 
 inline Vec3f operator+(const Vec3f &a, const Vec3f &b)
@@ -177,7 +181,8 @@ inline bool TryCandidate(float u,
                          const SolveTolerances &tol,
                          float &best_t,
                          float &best_u,
-                         float &best_v)
+                         float &best_v,
+                         unsigned int &reject_reasons)
 {
     const float denom_x = mx.c + mx.d * u;
     const float denom_y = my.c + my.d * u;
@@ -187,6 +192,7 @@ inline bool TryCandidate(float u,
     {
         if (std::fabs(denom_x) < tol.coeff_degeneracy)
         {
+            reject_reasons |= BilinearRejectDenominator;
             return false;
         }
         v = -(mx.a + mx.b * u) / denom_x;
@@ -195,6 +201,7 @@ inline bool TryCandidate(float u,
     {
         if (std::fabs(denom_y) < tol.coeff_degeneracy)
         {
+            reject_reasons |= BilinearRejectDenominator;
             return false;
         }
         v = -(my.a + my.b * u) / denom_y;
@@ -203,24 +210,28 @@ inline bool TryCandidate(float u,
     // Verify both transverse equations (redundant if algebra is exact).
     if (std::fabs(Eval(mx, u, v)) > tol.coeff_intersection || std::fabs(Eval(my, u, v)) > tol.coeff_intersection)
     {
+        reject_reasons |= BilinearRejectResidual;
         return false;
     }
 
     if (u < -kIntersectionTol || u > 1.0f + kIntersectionTol ||
         v < -kIntersectionTol || v > 1.0f + kIntersectionTol)
     {
+        reject_reasons |= BilinearRejectDomain;
         return false;
     }
 
     const float w = Eval(W, u, v);
     if (std::fabs(w) < tol.weight_degeneracy)
     {
+        reject_reasons |= BilinearRejectWeight;
         return false;
     }
 
     const float t = Eval(mz, u, v) * inv_dir_len / w;
     if (t < tnear || t > best_t)
     {
+        reject_reasons |= BilinearRejectTRange;
         return false;
     }
 
@@ -239,7 +250,8 @@ inline bool SolveBilinearHit(const BilinearCoeff &mx,
                              const SolveTolerances &tol,
                              float &best_t,
                              float &best_u,
-                             float &best_v)
+                             float &best_v,
+                             unsigned int &reject_reasons)
 {
     // Requiring the transverse vectors (a + b*u, c + d*u) [i.e. M(u, 0) and
     // dM/dv, restricted to the u-root] to be parallel — Cross_z(...) = 0 — gives
@@ -254,25 +266,36 @@ inline bool SolveBilinearHit(const BilinearCoeff &mx,
     const float C = CrossZ(a, c);
 
     bool hit_found = false;
+    bool root_generated = false;
 
     if (std::fabs(A) > tol.quad_degeneracy)
     {
         const float disc = B * B - 4.0f * A * C;
         if (disc >= 0.0f)
         {
+            root_generated = true;
             // Numerically stable quadratic formula: avoids catastrophic cancellation
             // in (-B +/- sqrt(disc)) when B^2 >> 4AC.
             const float sqrt_disc = std::sqrt(disc);
             const float q = -0.5f * (B + std::copysign(sqrt_disc, B));
             const float u0 = (q != 0.0f) ? (q / A) : 0.0f;
             const float u1 = (q != 0.0f) ? (C / q) : 0.0f;
-            hit_found |= TryCandidate(u0, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v);
-            hit_found |= TryCandidate(u1, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v);
+            hit_found |= TryCandidate(u0, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v,
+                                      reject_reasons);
+            hit_found |= TryCandidate(u1, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v,
+                                      reject_reasons);
         }
     }
     else if (std::fabs(B) > tol.quad_degeneracy)
     {
-        hit_found |= TryCandidate(-C / B, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v);
+        root_generated = true;
+        hit_found |= TryCandidate(-C / B, mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v,
+                                  reject_reasons);
+    }
+
+    if (!root_generated)
+    {
+        reject_reasons |= BilinearRejectNoRoot;
     }
 
     return hit_found;
@@ -291,6 +314,7 @@ BilinearPatchHitResult BilinearPatchResult(const BilinearPatchPrimitive &patch,
     float dir_len;
     if (!BuildRayFrame(ray_direction, ex, ey, ez, dir_len))
     {
+        result.reject_reasons = BilinearRejectInvalidRay;
         return result;
     }
     const float inv_dir_len = 1.0f / dir_len;
@@ -317,23 +341,27 @@ BilinearPatchHitResult BilinearPatchResult(const BilinearPatchPrimitive &patch,
                                         CornerWeight(patch, BilinearCorner::P01),
                                         CornerWeight(patch, BilinearCorner::P11));
 
-    const float coeff_scale = std::max(std::max(MaxAbsCoeff(mx), MaxAbsCoeff(my)), MaxAbsCoeff(mz));
+    // mx/my govern the transverse solve.  In particular, mz.a is commonly the
+    // camera-to-leaf distance, which must not inflate lateral residual and
+    // degeneracy tolerances as the camera moves along its viewing direction.
+    const float transverse_scale = std::max(MaxAbsCoeff(mx), MaxAbsCoeff(my));
     const float weight_scale = MaxAbsCoeff(W);
 
-    const float cs = std::max(coeff_scale, std::numeric_limits<float>::min());
+    const float ts = std::max(transverse_scale, std::numeric_limits<float>::min());
     const float ws = std::max(weight_scale, std::numeric_limits<float>::min());
 
     const SolveTolerances tol{
-        kDegeneracyEps * cs,
-        kIntersectionTol * cs,
+        kDegeneracyEps * ts,
+        kIntersectionTol * ts,
         kDegeneracyEps * ws,
-        kDegeneracyEps * cs * cs,
+        kDegeneracyEps * ts * ts,
     };
 
     float best_t = tfar;
     float best_u = 0.0f;
     float best_v = 0.0f;
-    if (!SolveBilinearHit(mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v))
+    if (!SolveBilinearHit(mx, my, mz, W, tnear, inv_dir_len, tol, best_t, best_u, best_v,
+                          result.reject_reasons))
     {
         return result;
     }
@@ -358,6 +386,38 @@ BilinearPatchHitResult BilinearPatchResult(const BilinearPatchPrimitive &patch,
 }
 
 } // namespace
+
+RayQueryDiagnostics *SetActiveRayQueryDiagnostics(RayQueryDiagnostics *diagnostics)
+{
+    RayQueryDiagnostics *const previous = g_active_ray_query_diagnostics;
+    g_active_ray_query_diagnostics = diagnostics;
+    return previous;
+}
+
+RayQueryDiagnostics *GetActiveRayQueryDiagnostics()
+{
+    return g_active_ray_query_diagnostics;
+}
+
+BilinearPatchRayHit IntersectBilinearPatchDirect(const BilinearPatchPrimitive &patch,
+                                                  const float origin[3],
+                                                  const float direction[3],
+                                                  float tnear,
+                                                  float tfar)
+{
+    const BilinearPatchHitResult result = BilinearPatchResult(
+        patch, {origin[0], origin[1], origin[2]}, {direction[0], direction[1], direction[2]}, tnear, tfar);
+    BilinearPatchRayHit out;
+    out.hit = result.hit;
+    out.t = result.t;
+    out.u = result.u;
+    out.v = result.v;
+    out.Ng[0] = result.Ng.x;
+    out.Ng[1] = result.Ng.y;
+    out.Ng[2] = result.Ng.z;
+    out.reject_reasons = result.reject_reasons;
+    return out;
+}
 
 void BilinearPatchBoundsFunc(const RTCBoundsFunctionArguments *args)
 {
@@ -387,12 +447,15 @@ void BilinearPatchBoundsFunc(const RTCBoundsFunctionArguments *args)
     }
 
     const float bump = static_cast<float>(user_data->box_bump);
-    args->bounds_o->lower_x = min_xyz[0] - bump;
-    args->bounds_o->lower_y = min_xyz[1] - bump;
-    args->bounds_o->lower_z = min_xyz[2] - bump;
-    args->bounds_o->upper_x = max_xyz[0] + bump;
-    args->bounds_o->upper_y = max_xyz[1] + bump;
-    args->bounds_o->upper_z = max_xyz[2] + bump;
+    // The solver and bounds both use float control points, but Embree's
+    // traversal must still see a conservative closed interval at a box face.
+    // One outward ULP is scale-aware and remains harmless for tiny scenes.
+    args->bounds_o->lower_x = std::nextafter(min_xyz[0] - bump, -std::numeric_limits<float>::infinity());
+    args->bounds_o->lower_y = std::nextafter(min_xyz[1] - bump, -std::numeric_limits<float>::infinity());
+    args->bounds_o->lower_z = std::nextafter(min_xyz[2] - bump, -std::numeric_limits<float>::infinity());
+    args->bounds_o->upper_x = std::nextafter(max_xyz[0] + bump, std::numeric_limits<float>::infinity());
+    args->bounds_o->upper_y = std::nextafter(max_xyz[1] + bump, std::numeric_limits<float>::infinity());
+    args->bounds_o->upper_z = std::nextafter(max_xyz[2] + bump, std::numeric_limits<float>::infinity());
 }
 
 void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
@@ -402,6 +465,12 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
         return;
     }
     assert(args->N == 1);
+
+    RayQueryDiagnostics *const diagnostics = GetActiveRayQueryDiagnostics();
+    if (diagnostics != nullptr)
+    {
+        ++diagnostics->kernel_invocations;
+    }
 
     const auto *user_data = static_cast<const BilinearPatchGeometryData *>(args->geometryUserPtr);
     const BilinearPatchPrimitive &patch = user_data->prim_ref_buffer[args->primID];
@@ -419,7 +488,24 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
         BilinearPatchResult(patch, origin, direction, ray.tnear, ray.tfar);
     if (!result.hit)
     {
+        if (diagnostics != nullptr)
+        {
+            ++diagnostics->kernel_rejections;
+            const unsigned int reasons = result.reject_reasons;
+            diagnostics->reject_invalid_ray += (reasons & BilinearRejectInvalidRay) != 0;
+            diagnostics->reject_no_root += (reasons & BilinearRejectNoRoot) != 0;
+            diagnostics->reject_denominator += (reasons & BilinearRejectDenominator) != 0;
+            diagnostics->reject_residual += (reasons & BilinearRejectResidual) != 0;
+            diagnostics->reject_domain += (reasons & BilinearRejectDomain) != 0;
+            diagnostics->reject_weight += (reasons & BilinearRejectWeight) != 0;
+            diagnostics->reject_t_range += (reasons & BilinearRejectTRange) != 0;
+        }
         return;
+    }
+
+    if (diagnostics != nullptr)
+    {
+        ++diagnostics->reported_hits;
     }
 
     ray.tfar = result.t;

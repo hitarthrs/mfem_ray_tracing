@@ -168,6 +168,55 @@ void TestInactiveLaneIsSkipped()
     CHECK(t.rayhit.hit.instID[0] == RTC_INVALID_GEOMETRY_ID);
 }
 
+// Regression: transverse solver thresholds must depend on the leaf footprint,
+// not the distance along the ray.  Before the split scale, this 0.3-wide flat
+// patch at z=1e6 was declared degenerate because mz.a dominated the threshold.
+void TestFarSmallPatchIsNotDeclaredDegenerate()
+{
+    BilinearPatchPrimitive patch = MakeFlatPatch(1.0e6, 0.15);
+    TestFixture t(patch, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+
+    CHECK(t.RunIntersect());
+    CHECK_NEAR(t.rayhit.ray.tfar, 1.0e6, 1e-2);
+    CHECK_NEAR(t.rayhit.hit.u, 0.5, 1e-3);
+    CHECK_NEAR(t.rayhit.hit.v, 0.5, 1e-3);
+}
+
+void TestDirectDiagnosticReportsDomainRejection()
+{
+    BilinearPatchPrimitive patch = MakeFlatPatch(1.0, 1.0);
+    const float origin[3] = {5.0f, 0.0f, 0.0f};
+    const float direction[3] = {0.0f, 0.0f, 1.0f};
+    const BilinearPatchRayHit result =
+        IntersectBilinearPatchDirect(patch, origin, direction, 0.0f, 10.0f);
+
+    CHECK(!result.hit);
+    CHECK((result.reject_reasons & BilinearRejectDomain) != 0);
+}
+
+void TestBoundsAreRoundedOutward()
+{
+    BilinearPatchPrimitive patch = MakeFlatPatch(2.0, 1.0);
+    BilinearPatchGeometryData geometry{};
+    geometry.prim_ref_buffer = &patch;
+    geometry.primitive_count = 1;
+    geometry.box_bump = 0.0;
+    RTCBounds bounds{};
+    RTCBoundsFunctionArguments args{};
+    args.geometryUserPtr = &geometry;
+    args.primID = 0;
+    args.bounds_o = &bounds;
+
+    BilinearPatchBoundsFunc(&args);
+
+    CHECK(bounds.lower_x < -1.0f);
+    CHECK(bounds.lower_y < -1.0f);
+    CHECK(bounds.lower_z < 2.0f);
+    CHECK(bounds.upper_x > 1.0f);
+    CHECK(bounds.upper_y > 1.0f);
+    CHECK(bounds.upper_z > 2.0f);
+}
+
 } // namespace
 
 void TestBilinearIntersect()
@@ -177,4 +226,7 @@ void TestBilinearIntersect()
     TestInstanceIdIsPropagated();
     TestGeometricNormalIsComputed();
     TestInactiveLaneIsSkipped();
+    TestFarSmallPatchIsNotDeclaredDegenerate();
+    TestDirectDiagnosticReportsDomainRejection();
+    TestBoundsAreRoundedOutward();
 }

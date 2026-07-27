@@ -4,6 +4,7 @@
 #include "embree/bilinear_patch_geometry.hpp"
 #include "embree/embree_interface.hpp"
 
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <unordered_map>
@@ -25,6 +26,24 @@ struct RayHitRecord
     double Ng[3] = {0.0, 0.0, 0.0};
     unsigned int geom_id = RTC_INVALID_GEOMETRY_ID;
     unsigned int prim_id = RTC_INVALID_GEOMETRY_ID;
+};
+
+/// Per-query observations from the bilinear user-geometry callback.
+/// A zero `kernel_invocations` count means the BVH never sent this ray to a
+/// bilinear leaf callback. `kernel_rejections` counts callback invocations for
+/// which the bilinear solver reported no acceptable candidate.
+struct RayQueryDiagnostics
+{
+    std::uint64_t kernel_invocations = 0;
+    std::uint64_t kernel_rejections = 0;
+    std::uint64_t reported_hits = 0;
+    std::uint64_t reject_invalid_ray = 0;
+    std::uint64_t reject_no_root = 0;
+    std::uint64_t reject_denominator = 0;
+    std::uint64_t reject_residual = 0;
+    std::uint64_t reject_domain = 0;
+    std::uint64_t reject_weight = 0;
+    std::uint64_t reject_t_range = 0;
 };
 
 /// Embree-backed first-hit / occlusion ray tracer over bilinear patch
@@ -59,12 +78,30 @@ public:
     RayHitRecord Intersect(const double origin[3],
                            const double direction[3],
                            double tnear = 0.0,
-                           double tfar = std::numeric_limits<double>::infinity()) const;
+                           double tfar = std::numeric_limits<double>::infinity(),
+                           RayQueryDiagnostics *diagnostics = nullptr) const;
 
-    /// All hits along org + t * dir for t in [tnear, tfar], in increasing-t
-    /// order. After each hit the search resumes just past that t so a ray can
-    /// pierce successive patches (e.g. front then back of a torus). Stops after
-    /// `max_hits` or when no further hit is found.
+    /// Diagnostic reference query: evaluate every registered patch directly,
+    /// bypassing Embree's BVH. This is intentionally slow and returns only the
+    /// closest direct hit, using the same float solver as the callback.
+    RayHitRecord IntersectBruteForce(const double origin[3],
+                                     const double direction[3],
+                                     double tnear = 0.0,
+                                     double tfar = std::numeric_limits<double>::infinity()) const;
+
+    /// Diagnostic reference query: collect one direct candidate from every
+    /// registered patch, sorted by t. Unlike IntersectAll, this never advances
+    /// a cursor and therefore exposes overlapping leaf coverage.
+    std::vector<RayHitRecord> IntersectAllBruteForce(
+        const double origin[3], const double direction[3], double tnear = 0.0,
+        double tfar = std::numeric_limits<double>::infinity(),
+        std::size_t max_hits = std::numeric_limits<std::size_t>::max()) const;
+
+    /// All distinct surface crossings along org + t * dir for t in [tnear,
+    /// tfar], in increasing-t order. Traversal resumes at the next
+    /// representable float t after each raw hit, then clusters nearly equal t
+    /// values so shared leaf coverage does not produce duplicate crossings.
+    /// Stops after `max_hits` retained crossings or when no further hit is found.
     std::vector<RayHitRecord> IntersectAll(const double origin[3],
                                            const double direction[3],
                                            double tnear = 0.0,

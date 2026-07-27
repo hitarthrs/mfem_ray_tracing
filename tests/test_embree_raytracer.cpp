@@ -32,6 +32,39 @@ BilinearPatchPrimitive MakeFlatPatch(double z_value, double half_extent = 1.0)
     return patch;
 }
 
+BilinearPatchPrimitive MakeFlatPatchRange(double x0, double x1, double y0, double y1, double z_value)
+{
+    BilinearPatchPrimitive patch;
+    auto set_corner = [&](BilinearCorner c, double x, double y) {
+        const int i = static_cast<int>(c);
+        patch.control_points[i][0] = x;
+        patch.control_points[i][1] = y;
+        patch.control_points[i][2] = z_value;
+    };
+    set_corner(BilinearCorner::P00, x0, y0);
+    set_corner(BilinearCorner::P10, x1, y0);
+    set_corner(BilinearCorner::P01, x0, y1);
+    set_corner(BilinearCorner::P11, x1, y1);
+    return patch;
+}
+
+BilinearPatchPrimitive MakeSaddlePatch()
+{
+    // z = x*y over [-1, 1]^2. The line x=y, z=0 touches at (0, 0, 0).
+    BilinearPatchPrimitive patch;
+    const auto set_corner = [&](BilinearCorner c, double x, double y, double z) {
+        const int i = static_cast<int>(c);
+        patch.control_points[i][0] = x;
+        patch.control_points[i][1] = y;
+        patch.control_points[i][2] = z;
+    };
+    set_corner(BilinearCorner::P00, -1.0, -1.0, 1.0);
+    set_corner(BilinearCorner::P10, 1.0, -1.0, -1.0);
+    set_corner(BilinearCorner::P01, -1.0, 1.0, -1.0);
+    set_corner(BilinearCorner::P11, 1.0, 1.0, 1.0);
+    return patch;
+}
+
 void TestSingleFlatPatchIntersectAndOcclude()
 {
     EmbreeRayTracer tracer;
@@ -97,6 +130,84 @@ void TestNearestOfTwoGeometriesWins()
     CHECK_NEAR(all[0].t, 2.0, 1e-4);
     CHECK(all[1].geom_id == far_id);
     CHECK_NEAR(all[1].t, 5.0, 1e-4);
+
+    const std::vector<RayHitRecord> brute_all = tracer.IntersectAllBruteForce(origin, direction);
+    CHECK(brute_all.size() == 2);
+    CHECK_NEAR(brute_all[0].t, 2.0, 1e-4);
+    CHECK_NEAR(brute_all[1].t, 5.0, 1e-4);
+}
+
+void TestIntersectAllClustersSharedCoverageButPreservesDistinctWalls()
+{
+    EmbreeRayTracer tracer;
+    // The first two leaves deliberately overlap at near-equal t. The third is
+    // farther than the mixed dedupe tolerance and must remain a separate wall.
+    tracer.RegisterPatches({MakeFlatPatch(2.0), MakeFlatPatch(2.000005), MakeFlatPatch(2.00005)});
+    tracer.CommitScene();
+
+    const double origin[3] = {0.0, 0.0, 0.0};
+    const double direction[3] = {0.0, 0.0, 1.0};
+    const std::vector<RayHitRecord> all = tracer.IntersectAll(origin, direction);
+
+    CHECK(all.size() == 2);
+    CHECK_NEAR(all[0].t, 2.0, 1e-4);
+    CHECK_NEAR(all[1].t, 2.00005, 1e-4);
+}
+
+void TestSharedEdgeAndNearEdgeRaysAcrossDistances()
+{
+    EmbreeRayTracer tracer;
+    tracer.RegisterPatches({MakeFlatPatchRange(-1.0, 0.0, -1.0, 1.0, 0.0),
+                            MakeFlatPatchRange(0.0, 1.0, -1.0, 1.0, 0.0)});
+    tracer.CommitScene();
+
+    const double direction[3] = {0.0, 0.0, 1.0};
+    const double edge_offsets[] = {-4.0 * std::numeric_limits<float>::epsilon(), 0.0,
+                                   4.0 * std::numeric_limits<float>::epsilon()};
+    const double distances[] = {1.0, 1000.0, 1.0e6};
+    for (const double distance : distances)
+    {
+        for (const double offset : edge_offsets)
+        {
+            const double origin[3] = {offset, 0.0, -distance};
+            const RayHitRecord embree_hit = tracer.Intersect(origin, direction);
+            const RayHitRecord direct_hit = tracer.IntersectBruteForce(origin, direction);
+            CHECK(embree_hit.hit);
+            CHECK(direct_hit.hit);
+            CHECK_NEAR(embree_hit.t, direct_hit.t, 1e-4 * std::max(1.0, distance));
+
+            const std::vector<RayHitRecord> all = tracer.IntersectAll(origin, direction);
+            CHECK(all.size() == 1);
+            CHECK_NEAR(all[0].t, distance, 1e-4 * std::max(1.0, distance));
+        }
+    }
+}
+
+void TestGrazingTangentAndNearTangentRays()
+{
+    EmbreeRayTracer tracer;
+    tracer.RegisterPatches({MakeSaddlePatch()});
+    tracer.CommitScene();
+
+    const double direction[3] = {1.0, 1.0, 0.0};
+    const double tangent_origin[3] = {-1.0, -1.0, 0.0};
+    const RayHitRecord tangent = tracer.Intersect(tangent_origin, direction);
+    const RayHitRecord tangent_direct = tracer.IntersectBruteForce(tangent_origin, direction);
+    CHECK(tangent.hit);
+    CHECK(tangent_direct.hit);
+    CHECK_NEAR(tangent.t, 1.0, 1e-4);
+    CHECK_NEAR(tangent.t, tangent_direct.t, 1e-4);
+    CHECK(tracer.IntersectAll(tangent_origin, direction).size() == 1);
+
+    // Lift the tangent ray slightly: the quadratic has two separate roots.
+    const double near_tangent_origin[3] = {-1.0, -1.0, 1e-4};
+    const std::vector<RayHitRecord> near_tangent_all = tracer.IntersectAll(near_tangent_origin, direction);
+    CHECK(near_tangent_all.size() == 2);
+    CHECK(near_tangent_all[1].t > near_tangent_all[0].t);
+
+    // Lower it: the ray does not reach the saddle.
+    const double miss_origin[3] = {-1.0, -1.0, -1e-4};
+    CHECK(!tracer.Intersect(miss_origin, direction).hit);
 }
 
 void TestUnnormalizedDirectionThroughScene()
@@ -112,6 +223,45 @@ void TestUnnormalizedDirectionThroughScene()
     CHECK_NEAR(hit.t, 0.5, 1e-4);
 }
 
+void TestRayQueryDiagnosticsCountCallbackOutcomes()
+{
+    EmbreeRayTracer tracer;
+    tracer.RegisterPatches({MakeFlatPatch(2.0)});
+    tracer.CommitScene();
+
+    const double direction[3] = {0.0, 0.0, 1.0};
+    RayQueryDiagnostics diagnostics;
+
+    const double hit_origin[3] = {0.0, 0.0, 0.0};
+    CHECK(tracer.Intersect(hit_origin, direction, 0.0,
+                           std::numeric_limits<double>::infinity(), &diagnostics).hit);
+    CHECK(diagnostics.kernel_invocations >= 1);
+    CHECK(diagnostics.reported_hits >= 1);
+    CHECK(diagnostics.kernel_rejections + diagnostics.reported_hits == diagnostics.kernel_invocations);
+
+    const RayHitRecord brute_hit = tracer.IntersectBruteForce(hit_origin, direction);
+    CHECK(brute_hit.hit);
+    CHECK_NEAR(brute_hit.t, 2.0, 1e-4);
+
+    // The patch lies beyond this ray segment.  Embree is permitted to invoke
+    // user geometry callbacks before their final t-range rejection, so this
+    // must be counted as a callback-level rejection rather than assumed to be
+    // a BVH miss.
+    CHECK(!tracer.Intersect(hit_origin, direction, 0.0, 1.0, &diagnostics).hit);
+    CHECK(diagnostics.kernel_invocations >= 1);
+    CHECK(diagnostics.kernel_rejections == diagnostics.kernel_invocations);
+    CHECK(diagnostics.reported_hits == 0);
+
+    // This lateral query reaches the callback but the solver rejects it, which
+    // is the other state the diagnostic output needs to distinguish.
+    const double solver_miss_origin[3] = {5.0, 5.0, 0.0};
+    CHECK(!tracer.Intersect(solver_miss_origin, direction, 0.0,
+                            std::numeric_limits<double>::infinity(), &diagnostics).hit);
+    CHECK(diagnostics.kernel_invocations >= 1);
+    CHECK(diagnostics.kernel_rejections == diagnostics.kernel_invocations);
+    CHECK(diagnostics.reported_hits == 0);
+}
+
 void TestLeafSceneLoader()
 {
     const LeafPatchScene scene = LoadLeafPatchScene(kLeafJsonPath);
@@ -124,6 +274,8 @@ void TestLeafSceneLoader()
     for (const LeafPatch &leaf : scene.leaves)
     {
         CHECK(!leaf.patch.rational);
+        // Older leaf exports did not carry a role; parsing remains backwards-compatible.
+        CHECK(leaf.role == "unknown");
         for (int axis = 0; axis < 3; ++axis)
         {
             double lo = leaf.patch.control_points[0][axis];
@@ -202,7 +354,11 @@ void TestEmbreeRayTracer()
 {
     TestSingleFlatPatchIntersectAndOcclude();
     TestNearestOfTwoGeometriesWins();
+    TestIntersectAllClustersSharedCoverageButPreservesDistinctWalls();
+    TestSharedEdgeAndNearEdgeRaysAcrossDistances();
+    TestGrazingTangentAndNearTangentRays();
     TestUnnormalizedDirectionThroughScene();
+    TestRayQueryDiagnosticsCountCallbackOutcomes();
     TestLeafSceneLoader();
     TestLeafSceneRayGrid();
 }

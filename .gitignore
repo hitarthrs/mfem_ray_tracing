@@ -13,6 +13,8 @@ build-*/
 include/ien_generator.hpp
 include/id_generator.hpp
 include/lm_generator.hpp
+
+
 src/ien_generator.cpp
 src/id_generator.cpp
 src/lm_generator.cpp
@@ -34,6 +36,15 @@ tests/test_bdr_patch_extractor.cpp
 tests/print_bdr_elements.cpp
 tests/print_bdr_patch_blocks.cpp
 tests/print_mesh_vertices.cpp
+
+
+include/tspline.hpp
+src/tspline.cpp
+src/tspline_paper_demo.cpp
+src/export_tspline_surface.cpp
+src/export_tspline_tmesh.cpp
+tests/test_tspline.cpp
+
 
 include/ray_tracing.hpp
 include/intersectAABB.hpp

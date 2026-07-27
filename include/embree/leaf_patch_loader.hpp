@@ -16,6 +16,8 @@ struct LeafPatch
 {
     BilinearPatchPrimitive patch;
     int index = -1;
+    /// Exporter role, when provided (e.g. interior, seam-exact, seam-phantom).
+    std::string role = "unknown";
     /// Where this leaf's [0, 1]^2 parameters live on the original surface.
     double u_domain_global[2] = {0.0, 1.0};
     double v_domain_global[2] = {0.0, 1.0};
