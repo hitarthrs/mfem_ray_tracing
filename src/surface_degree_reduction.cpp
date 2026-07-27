@@ -96,6 +96,8 @@ MidpointKnotForMaxError(const std::vector<double> &knotvector,
 // When `correct`, `tol` is treated as a Cartesian bound: the homogeneous error
 // is accumulated against tol / factor and rescaled back by factor, where
 // factor = (1 + |P|max) / w_min (convex-hull bound over the control net).
+// |P|max is relative to this curve's control-point centroid so the factor is
+// translation-invariant (world offset must not tighten the budget).
 bool DegreeReduceNURBCurve530(int n_control_points,
                               int degree,
                               const std::vector<double> &U,
@@ -129,12 +131,31 @@ bool DegreeReduceNURBCurve530(int n_control_points,
     double factor = 1.0 / w_min;
     if (!constant_weights)
     {
+        const std::size_t n = cp.size();
+        const int dim = n > 0 ? static_cast<int>(cp.front().size()) : 0;
+        std::vector<double> centroid(static_cast<std::size_t>(dim), 0.0);
+        for (const std::vector<double> &pt : cp)
+        {
+            for (int d = 0; d < dim; ++d)
+            {
+                centroid[static_cast<std::size_t>(d)] += pt[static_cast<std::size_t>(d)];
+            }
+        }
+        if (n > 0)
+        {
+            for (int d = 0; d < dim; ++d)
+            {
+                centroid[static_cast<std::size_t>(d)] /= static_cast<double>(n);
+            }
+        }
         double p_max = 0.0;
         for (const std::vector<double> &pt : cp)
         {
             double sq = 0.0;
-            for (double c : pt)
+            for (int d = 0; d < dim; ++d)
             {
+                const double c = pt[static_cast<std::size_t>(d)] -
+                                 centroid[static_cast<std::size_t>(d)];
                 sq += c * c;
             }
             p_max = std::max(p_max, std::sqrt(sq));
@@ -1381,6 +1402,71 @@ SingleStepSurfaceReductionResult PeakErrorSurfaceSingleStepOptimized(
 namespace
 {
 
+// Degree reduction is affine, not convex (the A5.11 recurrences extrapolate),
+// so a pass over a rational net can turn an all-positive weight row negative.
+// That voids the convex-hull AABB bound on bilinear leaves and the Eq. 5.30
+// error accounting (which divides by w_min). The weight component of a
+// homogeneous reduction is the same linear operator applied to the weight
+// vector alone, so reducing each weight line as a 1-D curve reproduces the
+// pass's output weights exactly without touching the Cartesian data. A
+// candidate pass is acceptable only when every reduced weight stays above this
+// fraction of the input's largest weight; rejected candidates split instead,
+// which converges (on a shrinking span the weight line tends to a constant,
+// whose reduction is itself).
+constexpr double kMinReducedWeightRatio = 1e-6;
+
+bool PassWeightsOk(const SurfaceData &surface, bool axis_u)
+{
+    if (surface.weights.empty())
+    {
+        return true;
+    }
+    const int degree = axis_u ? surface.degree_u : surface.degree_v;
+    if (degree < 2)
+    {
+        return true;
+    }
+    const std::vector<double> &kv = axis_u ? surface.knotvector_u : surface.knotvector_v;
+    const int n = axis_u ? surface.NumControlPointsU() : surface.NumControlPointsV();
+    const int lines = axis_u ? surface.NumControlPointsV() : surface.NumControlPointsU();
+    double w_max = 0.0;
+    for (const std::vector<double> &row : surface.weights)
+    {
+        for (double w : row)
+        {
+            w_max = std::max(w_max, w);
+        }
+    }
+    const double weight_floor = kMinReducedWeightRatio * w_max;
+    std::vector<std::vector<double>> line(static_cast<std::size_t>(n),
+                                          std::vector<double>(1));
+    std::vector<std::vector<double>> pw;
+    std::vector<double> uh;
+    std::vector<double> err;
+    for (int j = 0; j < lines; ++j)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            line[static_cast<std::size_t>(i)][0] =
+                axis_u ? surface.weights[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)]
+                       : surface.weights[static_cast<std::size_t>(j)][static_cast<std::size_t>(i)];
+        }
+        if (!DegreeReduceCurve(n, degree, kv, line, 1, pw, uh, err,
+                               std::numeric_limits<double>::infinity()))
+        {
+            return false;
+        }
+        for (const std::vector<double> &p : pw)
+        {
+            if (p[0] < weight_floor)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 struct ConfCell
 {
     SurfaceData surface;
@@ -1397,6 +1483,12 @@ struct ConfCell
     std::vector<double> v_probe;
     bool has_u_probe = false;
     bool has_v_probe = false;
+    // Cached weight-positivity of the u/v pass on the current `surface`
+    // (see PassWeightsOk); same invalidation rules as the probes.
+    bool u_weights_ok = true;
+    bool v_weights_ok = true;
+    bool has_u_weights = false;
+    bool has_v_weights = false;
 };
 
 // Parallel-for over [0, n): chunked std::async, falls back to serial for small
@@ -1478,6 +1570,8 @@ ConfCell MakeChildCell(const ConfCell &parent,
     child.v_probe.clear();
     child.has_u_probe = false;
     child.has_v_probe = false;
+    child.has_u_weights = false;
+    child.has_v_weights = false;
     return child;
 }
 
@@ -1500,6 +1594,26 @@ const std::vector<double> &CachedVProbe(ConfCell &cell, bool rtc)
         cell.has_v_probe = true;
     }
     return cell.v_probe;
+}
+
+bool CachedUWeightsOk(ConfCell &cell)
+{
+    if (!cell.has_u_weights)
+    {
+        cell.u_weights_ok = PassWeightsOk(cell.surface, true);
+        cell.has_u_weights = true;
+    }
+    return cell.u_weights_ok;
+}
+
+bool CachedVWeightsOk(ConfCell &cell)
+{
+    if (!cell.has_v_weights)
+    {
+        cell.v_weights_ok = PassWeightsOk(cell.surface, false);
+        cell.has_v_weights = true;
+    }
+    return cell.v_weights_ok;
 }
 
 // Split every cell whose axis range strictly contains x (a global iso-line).
@@ -1598,10 +1712,14 @@ std::vector<ConfCell> ConformingStep(std::vector<ConfCell> cells,
             if (reduce_u)
             {
                 CachedUProbe(cell, rtc);
+                CachedUWeightsOk(cell);
             }
             if (reduce_v)
             {
+                // v weight flag on the pre-u net is a proxy (like the v probe);
+                // the v safety loop re-checks the real intermediates.
                 CachedVProbe(cell, rtc);
+                CachedVWeightsOk(cell);
             }
         });
 
@@ -1616,14 +1734,26 @@ std::vector<ConfCell> ConformingStep(std::vector<ConfCell> cells,
             }
             const double eu = reduce_u ? MaxError(cell.u_probe) : 0.0;
             const double ev = reduce_v ? MaxError(cell.v_probe) : 0.0;
-            const bool ok = is_sum ? (eu + ev <= cell.step_tol)
-                                   : (std::max(eu, ev) <= cell.step_tol);
-            if (ok)
+            const bool wu_ok = reduce_u ? cell.u_weights_ok : true;
+            const bool wv_ok = reduce_v ? cell.v_weights_ok : true;
+            const bool err_ok = is_sum ? (eu + ev <= cell.step_tol)
+                                       : (std::max(eu, ev) <= cell.step_tol);
+            if (err_ok && wu_ok && wv_ok)
             {
                 continue;
             }
             bool placed = false;
-            const bool u_first = eu >= ev;
+            // A weight failure pins the split to the offending pass direction;
+            // otherwise split the direction with the larger error.
+            bool u_first = eu >= ev;
+            if (!wu_ok && wv_ok)
+            {
+                u_first = true;
+            }
+            else if (!wv_ok && wu_ok)
+            {
+                u_first = false;
+            }
             for (int attempt = 0; attempt < 2 && !placed; ++attempt)
             {
                 const bool try_u = (attempt == 0) ? u_first : !u_first;
@@ -1696,6 +1826,8 @@ std::vector<ConfCell> ConformingStep(std::vector<ConfCell> cells,
         // surface changed -> invalidate probe caches for the v phase
         cell.has_u_probe = false;
         cell.has_v_probe = false;
+        cell.has_u_weights = false;
+        cell.has_v_weights = false;
         cell.forced = false;
     });
 
@@ -1712,6 +1844,7 @@ std::vector<ConfCell> ConformingStep(std::vector<ConfCell> cells,
                 if (!cells[i].forced)
                 {
                     CachedVProbe(cells[i], rtc);
+                    CachedVWeightsOk(cells[i]);
                 }
             });
 
@@ -1722,7 +1855,7 @@ std::vector<ConfCell> ConformingStep(std::vector<ConfCell> cells,
                 {
                     continue;
                 }
-                if (MaxError(cell.v_probe) <= v_budget(cell))
+                if (MaxError(cell.v_probe) <= v_budget(cell) && cell.v_weights_ok)
                 {
                     continue;
                 }
@@ -1898,16 +2031,19 @@ std::pair<SurfaceData, double> ReduceBlockNoSplit(const SurfaceData &block,
                                                   int target_degree_u,
                                                   int target_degree_v,
                                                   SurfaceErrorCombination error_combination,
-                                                  bool rational_tol_correction)
+                                                  bool rational_tol_correction,
+                                                  bool *weights_ok)
 {
     SurfaceData s = block;
     double total = 0.0;
+    bool w_ok = true;
     const double inf = std::numeric_limits<double>::infinity();
     while (s.degree_u > target_degree_u || s.degree_v > target_degree_v)
     {
         double u_err = 0.0;
         if (s.degree_u > target_degree_u)
         {
+            w_ok = w_ok && PassWeightsOk(s, true);
             UPassState state =
                 ReduceUPassOnly(s, s.u_domain, s.v_domain, inf, rational_tol_correction);
             s = std::move(state.surface);
@@ -1915,6 +2051,7 @@ std::pair<SurfaceData, double> ReduceBlockNoSplit(const SurfaceData &block,
         }
         if (s.degree_v > target_degree_v)
         {
+            w_ok = w_ok && PassWeightsOk(s, false);
             UPassState state;
             state.surface = s;
             state.u_pass_error = u_err;
@@ -1929,6 +2066,10 @@ std::pair<SurfaceData, double> ReduceBlockNoSplit(const SurfaceData &block,
         {
             total += u_err;
         }
+    }
+    if (weights_ok != nullptr)
+    {
+        *weights_ok = w_ok;
     }
     return {std::move(s), total};
 }
@@ -2021,11 +2162,19 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
         return it->second;
     };
 
-    // Cached (surface, error). error = +inf marks a rejected (non-bilinear /
-    // multi-span) block so line-removal treats it as non-removable.
-    std::map<std::array<long long, 4>, std::pair<SurfaceData, double>> blocks;
+    // Cached reduced block. error = +inf marks a rejected (non-bilinear /
+    // multi-span) block and weights_ok = false marks a reduction that drove a
+    // weight below the positivity floor; line-removal treats both as
+    // non-removable.
+    struct CoalesceBlock
+    {
+        SurfaceData surface;
+        double error = std::numeric_limits<double>::infinity();
+        bool weights_ok = true;
+    };
+    std::map<std::array<long long, 4>, CoalesceBlock> blocks;
     auto block = [&](double u0, double u1, double v0, double v1)
-        -> const std::pair<SurfaceData, double> & {
+        -> const CoalesceBlock & {
         const std::array<long long, 4> key = {WeldKey(u0), WeldKey(u1), WeldKey(v0),
                                               WeldKey(v1)};
         auto it = blocks.find(key);
@@ -2033,23 +2182,23 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
         {
             if (crosses_hard_seam(u0, u1, ku_hard) || crosses_hard_seam(v0, v1, kv_hard))
             {
-                it = blocks
-                         .emplace(key,
-                                  std::make_pair(SurfaceData{},
-                                                 std::numeric_limits<double>::infinity()))
-                         .first;
+                it = blocks.emplace(key, CoalesceBlock{}).first;
             }
             else
             {
                 const SurfaceData &strip = u_strip(u0, u1);
                 SurfaceData sub = ExtractBlockFromOriginal(
                     strip, strip.u_domain.first, strip.u_domain.second, v0, v1);
-                auto reduced = ReduceBlockNoSplit(sub, tu, tv, combo, rtc);
-                if (options.hard_seams && !is_true_bilinear(reduced.first))
+                CoalesceBlock entry;
+                auto reduced =
+                    ReduceBlockNoSplit(sub, tu, tv, combo, rtc, &entry.weights_ok);
+                entry.surface = std::move(reduced.first);
+                entry.error = reduced.second;
+                if (options.hard_seams && !is_true_bilinear(entry.surface))
                 {
-                    reduced.second = std::numeric_limits<double>::infinity();
+                    entry.error = std::numeric_limits<double>::infinity();
                 }
-                it = blocks.emplace(key, std::move(reduced)).first;
+                it = blocks.emplace(key, std::move(entry)).first;
             }
         }
         return it->second;
@@ -2059,6 +2208,10 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
     // first over-budget block), so it already does near-minimal work per line;
     // speculative parallel warming only over-computes. Kept serial on purpose.
     (void)threads;
+    auto block_ok = [&](double u0, double u1, double v0, double v1) {
+        const CoalesceBlock &b = block(u0, u1, v0, v1);
+        return b.error <= max_error && b.weights_ok;
+    };
     auto u_line_removable = [&](std::size_t k) {
         if (crosses_hard_seam(us[k - 1], us[k + 1], ku_hard))
         {
@@ -2066,7 +2219,7 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
         }
         for (std::size_t j = 0; j + 1 < vs.size(); ++j)
         {
-            if (block(us[k - 1], us[k + 1], vs[j], vs[j + 1]).second > max_error)
+            if (!block_ok(us[k - 1], us[k + 1], vs[j], vs[j + 1]))
             {
                 return false;
             }
@@ -2080,7 +2233,7 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
         }
         for (std::size_t i = 0; i + 1 < us.size(); ++i)
         {
-            if (block(us[i], us[i + 1], vs[k - 1], vs[k + 1]).second > max_error)
+            if (!block_ok(us[i], us[i + 1], vs[k - 1], vs[k + 1]))
             {
                 return false;
             }
@@ -2122,16 +2275,26 @@ std::vector<ReducedSurfaceLeaf> CoalesceConformingGrid(
     {
         for (std::size_t j = 0; j + 1 < vs.size(); ++j)
         {
-            const auto &b = block(us[i], us[i + 1], vs[j], vs[j + 1]);
+            const CoalesceBlock &b = block(us[i], us[i + 1], vs[j], vs[j + 1]);
             if (options.hard_seams &&
-                (!std::isfinite(b.second) || !is_true_bilinear(b.first)))
+                (!std::isfinite(b.error) || !is_true_bilinear(b.surface)))
             {
                 throw std::runtime_error(
                     "CoalesceConformingGrid: cell is not a true bilinear "
                     "(hard-seam / reduce failure)");
             }
-            leaves.push_back(ReducedSurfaceLeaf{b.first,
-                                                b.second,
+            if (!b.weights_ok)
+            {
+                // Base grid cell the refinement could not split further
+                // (forced accept); its weights may be negative — downstream
+                // must not treat its control-net AABB as exact.
+                std::fprintf(stderr,
+                             "warning: coalesce cell u=[%g,%g] v=[%g,%g] kept with "
+                             "non-positive reduced weights (forced accept)\n",
+                             us[i], us[i + 1], vs[j], vs[j + 1]);
+            }
+            leaves.push_back(ReducedSurfaceLeaf{b.surface,
+                                                b.error,
                                                 n_steps,
                                                 {us[i], us[i + 1]},
                                                 {vs[j], vs[j + 1]}});

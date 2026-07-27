@@ -61,11 +61,16 @@ MultipleStepSurfaceReductionResult DegreeReduceMultipleStepsConforming(
 
 /// Reduce one (merged) block to the target degrees WITHOUT splitting; returns
 /// the reduced surface and its accumulated error (used by coalescing + tests).
+/// When `weights_ok` is non-null it is set to false if any pass of any step
+/// drove a reduced weight below the positivity floor: such a block is not an
+/// acceptable merge even when its error fits the budget (its control-net AABB
+/// and Eq. 5.30 accounting are void).
 std::pair<SurfaceData, double> ReduceBlockNoSplit(const SurfaceData &block,
                                                   int target_degree_u,
                                                   int target_degree_v,
                                                   SurfaceErrorCombination error_combination,
-                                                  bool rational_tol_correction);
+                                                  bool rational_tol_correction,
+                                                  bool *weights_ok = nullptr);
 
 } // namespace mfem_raytracing
 

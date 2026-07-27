@@ -5,6 +5,7 @@
 // JSON parser is used instead of pulling in an external dependency.
 
 #include "embree/leaf_patch_loader.hpp"
+#include "hard_seam_bilinearization.hpp"
 
 #include <cctype>
 #include <cstdlib>
@@ -397,6 +398,11 @@ LeafPatch ParseLeaf(const JsonValue &leaf_json)
 {
     LeafPatch leaf;
     leaf.index = static_cast<int>(leaf_json.At("index").AsNumber());
+    const auto patch_id_it = leaf_json.object_items.find("patch_id");
+    if (patch_id_it != leaf_json.object_items.end())
+    {
+        leaf.patch_id = static_cast<int>(patch_id_it->second.AsNumber());
+    }
     const auto role_it = leaf_json.object_items.find("role");
     if (role_it != leaf_json.object_items.end())
     {
@@ -575,6 +581,132 @@ SurfaceData LoadSurfaceDataJson(const std::string &json_path)
     surface.v_domain = {surface.knotvector_v[pv],
                         surface.knotvector_v[surface.knotvector_v.size() - pv - 1]};
     return surface;
+}
+
+SurfacePatchCatalog LoadSurfacePatchCatalogJson(const std::string &json_path)
+{
+    std::ifstream stream(json_path);
+    if (!stream)
+    {
+        throw std::runtime_error("surface patch catalog: cannot open '" + json_path + "'");
+    }
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    const JsonValue root = JsonParser(buffer.str()).Parse();
+
+    const auto parse_surface = [](const JsonValue &node) {
+        SurfaceData surface;
+        surface.degree_u = static_cast<int>(node.At("degree_u").AsNumber());
+        surface.degree_v = static_cast<int>(node.At("degree_v").AsNumber());
+        surface.dim = 3;
+        const auto &rows = node.At("control_points").AsArray();
+        surface.control_points.resize(rows.size());
+        for (std::size_t i = 0; i < rows.size(); ++i)
+        {
+            const auto &cols = rows[i].AsArray();
+            surface.control_points[i].resize(cols.size());
+            for (std::size_t j = 0; j < cols.size(); ++j)
+            {
+                const auto &point = cols[j].AsArray();
+                if (point.size() != 3)
+                {
+                    throw std::runtime_error("surface patch catalog: expected 3D control points");
+                }
+                surface.control_points[i][j] = {point[0].AsNumber(), point[1].AsNumber(),
+                                                point[2].AsNumber()};
+            }
+        }
+        const JsonValue &weights = node.At("weights");
+        if (!weights.IsNull())
+        {
+            const auto &rows_w = weights.AsArray();
+            surface.weights.resize(rows_w.size());
+            for (std::size_t i = 0; i < rows_w.size(); ++i)
+            {
+                const auto &cols_w = rows_w[i].AsArray();
+                surface.weights[i].resize(cols_w.size());
+                for (std::size_t j = 0; j < cols_w.size(); ++j)
+                {
+                    surface.weights[i][j] = cols_w[j].AsNumber();
+                }
+            }
+        }
+        for (const JsonValue &k : node.At("knotvector_u").AsArray())
+        {
+            surface.knotvector_u.push_back(k.AsNumber());
+        }
+        for (const JsonValue &k : node.At("knotvector_v").AsArray())
+        {
+            surface.knotvector_v.push_back(k.AsNumber());
+        }
+        const std::size_t pu = static_cast<std::size_t>(surface.degree_u);
+        const std::size_t pv = static_cast<std::size_t>(surface.degree_v);
+        if (surface.knotvector_u.size() <= 2 * pu + 1 ||
+            surface.knotvector_v.size() <= 2 * pv + 1)
+        {
+            throw std::runtime_error("surface patch catalog: knot vectors too short for the degrees");
+        }
+        surface.u_domain = {surface.knotvector_u[pu],
+                            surface.knotvector_u[surface.knotvector_u.size() - pu - 1]};
+        surface.v_domain = {surface.knotvector_v[pv],
+                            surface.knotvector_v[surface.knotvector_v.size() - pv - 1]};
+        return surface;
+    };
+
+    SurfacePatchCatalog catalog;
+    const auto mesh_it = root.object_items.find("mesh");
+    if (mesh_it != root.object_items.end()) { catalog.mesh = mesh_it->second.AsString(); }
+    const auto description_it = root.object_items.find("description");
+    if (description_it != root.object_items.end()) { catalog.description = description_it->second.AsString(); }
+    const auto &patches = root.At("patches").AsArray();
+    catalog.patches.reserve(patches.size());
+    for (const JsonValue &node : patches)
+    {
+        SurfacePatchDescriptor patch;
+        patch.id = static_cast<int>(node.At("id").AsNumber());
+        patch.name = node.At("name").AsString();
+        patch.role = node.At("role").AsString();
+        const auto quarter_it = node.object_items.find("quarter");
+        if (quarter_it != node.object_items.end()) { patch.quarter = static_cast<int>(quarter_it->second.AsNumber()); }
+        const auto volume_it = node.object_items.find("volume_patch");
+        if (volume_it != node.object_items.end()) { patch.volume_patch = static_cast<int>(volume_it->second.AsNumber()); }
+        const auto attribute_it = node.object_items.find("attribute");
+        if (attribute_it != node.object_items.end()) { patch.attribute = static_cast<int>(attribute_it->second.AsNumber()); }
+        patch.surface = parse_surface(node);
+        // geomdl (used by the reference Python pipeline) normalizes its
+        // parameter domain. Preserve the geometry while adopting [0,1]^2 so
+        // hard knots, leaf domains, and exported JSON are directly comparable.
+        const auto normalize_knots = [](std::vector<double> &knots, int degree,
+                                        std::pair<double, double> &domain) {
+            const double lo = knots[static_cast<std::size_t>(degree)];
+            const double hi = knots[knots.size() - static_cast<std::size_t>(degree) - 1];
+            if (!(hi > lo))
+            {
+                throw std::runtime_error("surface patch catalog: invalid parameter domain");
+            }
+            for (double &knot : knots)
+            {
+                knot = (knot - lo) / (hi - lo);
+            }
+            domain = {0.0, 1.0};
+        };
+        normalize_knots(patch.surface.knotvector_u, patch.surface.degree_u, patch.surface.u_domain);
+        normalize_knots(patch.surface.knotvector_v, patch.surface.degree_v, patch.surface.v_domain);
+        catalog.patches.push_back(std::move(patch));
+    }
+    return catalog;
+}
+
+const SurfacePatchDescriptor &FindSurfacePatch(const SurfacePatchCatalog &catalog, int id)
+{
+    for (const SurfacePatchDescriptor &patch : catalog.patches)
+    {
+        if (patch.id == id)
+        {
+            return patch;
+        }
+    }
+    throw std::out_of_range("surface patch catalog: no patch with id " + std::to_string(id));
 }
 
 } // namespace mfem_raytracing

@@ -16,6 +16,8 @@ struct LeafPatch
 {
     BilinearPatchPrimitive patch;
     int index = -1;
+    /// Source catalog patch, when provided by a hard-seam export.
+    int patch_id = -1;
     /// Exporter role, when provided (e.g. interior, seam-exact, seam-phantom).
     std::string role = "unknown";
     /// Where this leaf's [0, 1]^2 parameters live on the original surface.

@@ -27,6 +27,7 @@ add_library(mfem_raytracing
     src/surface_degree_reduction.cpp
     src/surface_multistep_reduction.cpp
     src/bilinear_leaf_extraction.cpp
+    src/hard_seam_bilinearization.cpp
     src/leaf_patch_loader.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
@@ -71,6 +72,10 @@ target_link_libraries(export_leaf_bboxes PRIVATE mfem_raytracing)
 # surface; input surfaces from python_experiments/export_surface_inputs.py.
 add_executable(export_bilinear_patches src/export_bilinear_patches.cpp)
 target_link_libraries(export_bilinear_patches PRIVATE mfem_raytracing)
+
+# Full multi-span catalog patches -> independent hard-seam bilinear leaves.
+add_executable(export_hard_seam_patches src/export_hard_seam_patches.cpp)
+target_link_libraries(export_hard_seam_patches PRIVATE mfem_raytracing)
 
 enable_testing()
 
