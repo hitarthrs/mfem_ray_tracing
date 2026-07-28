@@ -51,6 +51,116 @@ When built with Embree enabled:
 
 Cartesian mesh builders and NURBS mesh helpers used by examples and tests.
 
+### 5. T-spline geometric representations
+
+`include/tspline.hpp` provides a compact implementation of the foundational
+representations in Sederberg, Zheng, Bakenov, and Nasri, *T-splines and
+T-NURCCs* (2003): rectilinear knot-interval T-meshes, cubic local knot-vector
+tracing, PB-spline blending (Eq. 1-4), rational weights, and two-bay
+T-junction extension candidates used during cubic Bezier-domain construction.
+It intentionally does not claim a complete extraordinary-vertex T-NURCC
+refinement algorithm.
+
+For degree-1 T-splines, `ExtractDegreeOneLeaves` converts every T-mesh knot
+cell into an exact rational bilinear leaf. `export_tspline_tmesh` writes those
+leaves in the same JSON schema used by `LoadLeafPatchScene`,
+`render_leaf_patches`, Embree, and `bilinear_ray_tracer.html`; no Embree
+primitive changes are required.
+
+`demo_pipe_tspline_leaf_join.py` is the companion multi-patch experiment: it
+keeps the original compete+coalesce counts (`n0 + n1`) rather than globally
+re-extracting cells. Its JSON stores both the normal Embree-ready `leaves`
+array and a `tspline` object with the degree-1 T-mesh/faces/T-junctions.
+
+### Certified multi-patch T-spline shell workflow
+
+The C++ shell workflow joins independently degree-reduced bilinear patches
+along a NURBS / T-spline patch catalog, then exports one non-overlapping leaf
+set for Embree.  It is intended for app code that needs a clear admission
+boundary: a shell is either certified for RT or accompanied by diagnostics
+explaining why it is not.
+
+```mermaid
+flowchart LR
+    A["NURBS / T-spline patch catalog"] --> B["Hard-seam degree reduction"]
+    B --> C["Independent bilinear source leaves"]
+    C --> D["Discover patch interfaces"]
+    D --> E["Homogeneous C0 average merge per seam"]
+    E --> F["Exact boundary refinement"]
+    F --> G["One-owner leaf partition"]
+    G --> H["Interior bilinear leaves"]
+    G --> I["Side-collar bilinear leaves"]
+    G --> J["Corner-collar bilinear leaves"]
+    H --> K["Watertightness + error certificate"]
+    I --> K
+    J --> K
+    K -->|"certified"| L["Embree custom bilinear geometry"]
+    K -->|"diagnostic only"| M["JSON report / inspection tools"]
+```
+
+The three emitted leaf roles are deliberately simple:
+
+- **Interior** leaves are unchanged source bilinears away from interfaces.
+- **Side-collar** leaves are source boundary cells, exactly split where an
+  interface needs additional knots and reseated onto its merged seam curve.
+- **Corner-collar** leaves are source corner cells satisfying every incident
+  seam together. Their shared projective corner is averaged once, so a corner
+  is emitted once rather than once per adjoining interface.
+
+This replaces the older full-pairwise-strip output as the normal export path.
+The old construction is still available only as a comparison artifact through
+`--compatibility-overlap`; it is not RT-certifiable when its overlapping seam
+coverage produces duplicate owners.
+
+The implementation is intentionally split into auditable modules:
+
+| Header / source | Responsibility |
+| --- | --- |
+| `tspline_patch_interfaces.*` | Discover and orient shared catalog boundaries |
+| `tspline_leaf_assembly.*` | Group JSON leaves by source patch and select bands/chains |
+| `tspline_average_merge.*` | Rational-safe homogeneous seam averaging |
+| `tspline_bilinear_ops.*` | Exact bilinear splitting and projective evaluation |
+| `tspline_corner_collar.*` | Disjoint side/corner collar partition and vertex resolution |
+| `tspline_shell_watertightness.*` | Source ownership, closed-edge, and manifold checks |
+| `tspline_shell_composer.*` | Build orchestration and RT admission gate |
+| `tspline_shell_json.*` | Certified shell JSON serialization |
+
+The app-level orchestration entry point is:
+
+```cpp
+using namespace mfem_raytracing;
+using namespace mfem_raytracing::tspline;
+
+LeafPatchScene leaves = LoadLeafPatchScene("all_patches_0_05.json");
+SurfacePatchCatalog catalog = LoadSurfacePatchCatalogJson("pipe_nurbs_border_patches.json");
+
+ShellBuildOptions options;
+options.error_validation.maximum_conservative_error = 0.05;
+BakedTsplineShell shell = ComposeBakedTsplineShell(leaves, catalog, options);
+RequireShellReadyForRayTracing(shell); // throws with a specific failed invariant
+```
+
+`BakedTsplineShell` carries the runtime leaves plus its error, ownership, and
+watertightness reports.  `RuntimeLeaves()` supplies the final bilinears.  When
+Embree is enabled, `EmbreeRayTracer::RegisterLeafPatchScene` also refuses JSON
+that declares `certification.rt_certified: false`, unless a diagnostic override
+is requested explicitly.
+
+Example command for the direct hard-seam pipe input:
+
+```bash
+./build/export_tspline_bilinear_shell \
+  --catalog python_experiments/multiple_step_degree_reduction_surfaces/pipe_nurbs_border_patches.json \
+  --leaves python_experiments/multiple_step_degree_reduction_surfaces/outputs/all_patches_0_05.json \
+  --json out/pipe_rt_shell.json \
+  --max-error 0.05
+```
+
+On that fixture, the exact collar path emits 2,304 leaves with zero duplicate
+owners, open spans, or non-manifold spans; the result is RT-certified.  The
+certificate remains the required precondition rather than a promise that every
+input catalog has already met these invariants.
+
 ---
 
 ## Dependencies
@@ -110,6 +220,9 @@ Principal reduction / tracing headers:
 | `export_leaf_bboxes` | Multi-step reduction → leaf AABB JSON (golden-surface demos) |
 | `render_leaf_patches` | Embree render of a leaf JSON → shaded / UV / top-down PPM |
 | `export_scene_json` | Embree multi-hit ray grid over a leaf scene (for visualization) |
+| `export_tspline_bilinear_shell` | Join hard-seam leaves through exact side/corner collars and emit certified RT JSON |
+| `tspline_paper_demo` | Reproduces the Fig. 8 local-knot construction and evaluates its T-spline |
+| `export_tspline_tmesh` | Evaluates a TSP1 T-mesh and extracts degree-1 T-spline leaves for Embree / HTML |
 | `bench_*_degree_reduction` | Curve / surface reduction microbenchmarks |
 
 Example (Embree build):
@@ -119,6 +232,15 @@ Example (Embree build):
 ./build/export_bilinear_patches --help
 ./build/render_leaf_patches path/to/leaves.json out/prefix 512
 ./build/export_scene_json path/to/leaves.json out/scene.json 24
+```
+
+Paper reproduction (no Embree required):
+
+```bash
+./build/tspline_paper_demo
+# Fig. 8 local s knots: 0 1 2 3 4
+# Fig. 8 local t knots: 0 1 2 3 4
+# Cubic B(2) = 0.666667
 ```
 
 ---
@@ -134,8 +256,9 @@ Example (Embree build):
 ## References
 
 1. Piegl, L., & Tiller, W. (1997). *The NURBS Book* (2nd ed.). Springer.
-2. Intel Embree — [https://www.embree.org/](https://www.embree.org/)
-3. MFEM — [https://mfem.org/](https://mfem.org/)
+2. Sederberg, T. W., Zheng, J., Bakenov, A., & Nasri, A. (2003). *T-splines and T-NURCCs*. ACM TOG 22(3), 477-484.
+3. Intel Embree — [https://www.embree.org/](https://www.embree.org/)
+4. MFEM — [https://mfem.org/](https://mfem.org/)
 
 ---
 
