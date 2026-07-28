@@ -10,7 +10,7 @@
 //
 // Usage: render_leaf_patches <leaf_bboxes.json> <output_prefix> [image_size]
 //                           [--diagnose] [--rt-diagnostics] [--bruteforce-grid N]
-//                           [--multihit-grid N]
+//                           [--multihit-grid N] [--allow-diagnostic-shell]
 
 #include "embree/leaf_patch_loader.hpp"
 #include "embree/raytracer.hpp"
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     {
         std::cerr << "usage: render_leaf_patches <leaf_bboxes.json> <output_prefix> [image_size]"
                   << " [--diagnose] [--rt-diagnostics] [--bruteforce-grid N]"
-                  << " [--multihit-grid N]\n";
+                  << " [--multihit-grid N] [--allow-diagnostic-shell]\n";
         return 1;
     }
     const std::string json_path = argv[1];
@@ -157,6 +157,7 @@ int main(int argc, char **argv)
     bool diagnose = false;
     int brute_force_grid = 0;
     int multihit_grid = 0;
+    bool allow_diagnostic_shell = false;
     bool size_seen = false;
     for (int i = 3; i < argc; ++i)
     {
@@ -201,6 +202,10 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+        else if (arg == "--allow-diagnostic-shell")
+        {
+            allow_diagnostic_shell = true;
+        }
         else if (!size_seen)
         {
             size = std::max(16, std::atoi(argv[i]));
@@ -228,6 +233,7 @@ int main(int argc, char **argv)
     try
     {
         scene = LoadLeafPatchScene(json_path);
+        scene.RequireRayTracingCertified(allow_diagnostic_shell);
     }
     catch (const std::exception &e)
     {
@@ -236,7 +242,7 @@ int main(int argc, char **argv)
     }
 
     EmbreeRayTracer tracer;
-    tracer.RegisterPatches(scene.Patches());
+    tracer.RegisterLeafPatchScene(scene, allow_diagnostic_shell);
     tracer.CommitScene();
 
     const Vec3 lo = {scene.scene_bbox.min[0], scene.scene_bbox.min[1], scene.scene_bbox.min[2]};

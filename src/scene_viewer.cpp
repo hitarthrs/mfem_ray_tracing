@@ -1,7 +1,8 @@
 // Native SDL2 viewer for Embree bilinear patch scene JSONs.
 //
 // Usage:
-//   scene_viewer <*_embree_scene.json | *_leaf_bboxes.json> [--check]
+//   scene_viewer <*_embree_scene.json | *_leaf_bboxes.json>
+//                [--check] [--allow-diagnostic-shell]
 //
 // Controls:
 //   left drag       orbit (orbit mode)
@@ -340,10 +341,27 @@ std::string ReadFile(const std::string &path)
     return ss.str();
 }
 
-Scene LoadSceneJson(const std::string &path)
+Scene LoadSceneJson(const std::string &path, bool allow_diagnostic_shell = false)
 {
     const Json root = JsonParser(ReadFile(path)).Parse();
     if (root.type != Json::Type::Object) throw std::runtime_error("top-level JSON is not an object");
+
+    // scene_viewer also accepts leaf JSON directly, rather than going through
+    // LoadLeafPatchScene, so preserve the same explicit safety gate here.
+    if (root.Has("certification"))
+    {
+        const Json &certification = root.At("certification");
+        if (certification.type != Json::Type::Object || !certification.Has("rt_certified") ||
+            certification.At("rt_certified").type != Json::Type::Bool)
+        {
+            throw std::runtime_error("invalid baked-shell certification metadata");
+        }
+        if (!certification.At("rt_certified").boolean && !allow_diagnostic_shell)
+        {
+            throw std::runtime_error(
+                "scene declares rt_certified=false; pass --allow-diagnostic-shell to inspect it");
+        }
+    }
 
     Scene scene;
     if (root.Has("surface")) scene.surface = root.At("surface").string;
@@ -1096,15 +1114,28 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        std::cerr << "usage: scene_viewer <*_embree_scene.json | *_leaf_bboxes.json> [--check]\n";
+        std::cerr << "usage: scene_viewer <*_embree_scene.json | *_leaf_bboxes.json>"
+                  << " [--check] [--allow-diagnostic-shell]\n";
         return 1;
     }
-    const bool check_only = argc > 2 && std::string(argv[2]) == "--check";
+    bool check_only = false;
+    bool allow_diagnostic_shell = false;
+    for (int i = 2; i < argc; ++i)
+    {
+        const std::string arg = argv[i];
+        if (arg == "--check") { check_only = true; }
+        else if (arg == "--allow-diagnostic-shell") { allow_diagnostic_shell = true; }
+        else
+        {
+            std::cerr << "error: unknown argument '" << arg << "'\n";
+            return 1;
+        }
+    }
 
     Scene scene;
     try
     {
-        scene = LoadSceneJson(argv[1]);
+        scene = LoadSceneJson(argv[1], allow_diagnostic_shell);
     }
     catch (const std::exception &e)
     {
@@ -1176,7 +1207,7 @@ int main(int argc, char **argv)
         Scene new_scene;
         try
         {
-            new_scene = LoadSceneJson(path);
+            new_scene = LoadSceneJson(path, allow_diagnostic_shell);
         }
         catch (const std::exception &e)
         {

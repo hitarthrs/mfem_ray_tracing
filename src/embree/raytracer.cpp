@@ -1,6 +1,7 @@
 #include "embree/raytracer.hpp"
 
 #include "bilinear_intersect.hpp"
+#include "embree/leaf_patch_loader.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -76,6 +77,14 @@ unsigned int EmbreeRayTracer::RegisterPatches(std::vector<BilinearPatchPrimitive
     geometry_slots_[geom_id] = std::move(slot);
     committed_ = false;
     return geom_id;
+}
+
+unsigned int EmbreeRayTracer::RegisterLeafPatchScene(const LeafPatchScene &scene,
+                                                     bool allow_diagnostic_shell,
+                                                     double box_bump)
+{
+    scene.RequireRayTracingCertified(allow_diagnostic_shell);
+    return RegisterPatches(scene.Patches(), box_bump);
 }
 
 void EmbreeRayTracer::CommitScene()

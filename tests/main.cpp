@@ -28,6 +28,9 @@ int main()
     std::cout << "Running multi-step surface reduction tests..." << std::endl;
     TestSurfaceMultistepReduction();
 
+    std::cout << "Running T-spline kernel tests..." << std::endl;
+    TestTSpline();
+
 #ifdef MFEM_RAYTRACING_ENABLE_EMBREE
     std::cout << "Running Embree bilinear patch intersection tests..." << std::endl;
     TestBilinearIntersect();

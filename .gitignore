@@ -38,12 +38,9 @@ tests/print_bdr_patch_blocks.cpp
 tests/print_mesh_vertices.cpp
 
 
-include/tspline.hpp
-src/tspline.cpp
 src/tspline_paper_demo.cpp
 src/export_tspline_surface.cpp
 src/export_tspline_tmesh.cpp
-tests/test_tspline.cpp
 
 
 include/ray_tracing.hpp

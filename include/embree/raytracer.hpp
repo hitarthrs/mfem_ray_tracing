@@ -13,6 +13,8 @@
 namespace mfem_raytracing
 {
 
+struct LeafPatchScene;
+
 /// Result of a first-hit ray query against bilinear patch geometry.
 struct RayHitRecord
 {
@@ -69,6 +71,15 @@ public:
     /// geometry id, which appears as RayHitRecord::geom_id in query results.
     unsigned int RegisterPatches(std::vector<BilinearPatchPrimitive> patches,
                                  double box_bump = 0.0);
+
+    /// Register a JSON-derived leaf scene through its explicit RT admission
+    /// gate.  Legacy scenes with no certificate are accepted; a baked shell
+    /// that declares itself diagnostic-only requires an explicit override.
+    /// The lower-level RegisterPatches overload remains available for callers
+    /// constructing primitives programmatically.
+    unsigned int RegisterLeafPatchScene(const LeafPatchScene &scene,
+                                        bool allow_diagnostic_shell = false,
+                                        double box_bump = 0.0);
 
     /// Build/rebuild the BVH. Must be called after RegisterPatches and before
     /// any queries.

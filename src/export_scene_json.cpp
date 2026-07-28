@@ -4,6 +4,7 @@
 // the viewer can draw the beam continuing through successive surfaces.
 //
 // Usage: export_scene_json <leaf_bboxes.json> <out.json> [grid_n]
+//                         [--allow-diagnostic-shell]
 
 #include "embree/leaf_patch_loader.hpp"
 #include "embree/raytracer.hpp"
@@ -32,17 +33,39 @@ int main(int argc, char **argv)
 {
     if (argc < 3)
     {
-        std::cerr << "usage: export_scene_json <leaf_bboxes.json> <out.json> [grid_n]\n";
+        std::cerr << "usage: export_scene_json <leaf_bboxes.json> <out.json> [grid_n]"
+                  << " [--allow-diagnostic-shell]\n";
         return 1;
     }
     const std::string in_path = argv[1];
     const std::string out_path = argv[2];
-    const int grid_n = (argc > 3) ? std::max(2, std::atoi(argv[3])) : 16;
+    int grid_n = 16;
+    bool grid_seen = false;
+    bool allow_diagnostic_shell = false;
+    for (int i = 3; i < argc; ++i)
+    {
+        const std::string arg = argv[i];
+        if (arg == "--allow-diagnostic-shell")
+        {
+            allow_diagnostic_shell = true;
+        }
+        else if (!grid_seen)
+        {
+            grid_n = std::max(2, std::atoi(argv[i]));
+            grid_seen = true;
+        }
+        else
+        {
+            std::cerr << "error: unknown argument '" << arg << "'\n";
+            return 1;
+        }
+    }
 
     LeafPatchScene scene;
     try
     {
         scene = LoadLeafPatchScene(in_path);
+        scene.RequireRayTracingCertified(allow_diagnostic_shell);
     }
     catch (const std::exception &e)
     {
@@ -51,7 +74,7 @@ int main(int argc, char **argv)
     }
 
     EmbreeRayTracer tracer;
-    tracer.RegisterPatches(scene.Patches());
+    tracer.RegisterLeafPatchScene(scene, allow_diagnostic_shell);
     tracer.CommitScene();
 
     const double *lo = scene.scene_bbox.min;

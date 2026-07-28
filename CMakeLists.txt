@@ -29,6 +29,19 @@ add_library(mfem_raytracing
     src/bilinear_leaf_extraction.cpp
     src/hard_seam_bilinearization.cpp
     src/leaf_patch_loader.cpp
+    src/tspline.cpp
+    src/tspline_seam_types.cpp
+    src/tspline_patch_interfaces.cpp
+    src/tspline_leaf_assembly.cpp
+    src/tspline_bilinear_ops.cpp
+    src/tspline_average_merge.cpp
+    src/tspline_strip_builder.cpp
+    src/tspline_degree_one_bake.cpp
+    src/tspline_error_accounting.cpp
+    src/tspline_corner_collar.cpp
+    src/tspline_shell_watertightness.cpp
+    src/tspline_shell_composer.cpp
+    src/tspline_shell_json.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -51,6 +64,7 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   mfem_raytracing_link_embree(mfem_raytracing_embree)
+  target_link_libraries(mfem_raytracing_embree PUBLIC mfem_raytracing)
   message(STATUS "mfem_raytracing_embree sources: src/bilinear_intersect.cpp ${MFEM_RAYTRACING_EMBREE_EXTRA_SOURCES}")
 endif()
 
@@ -77,7 +91,19 @@ target_link_libraries(export_bilinear_patches PRIVATE mfem_raytracing)
 add_executable(export_hard_seam_patches src/export_hard_seam_patches.cpp)
 target_link_libraries(export_hard_seam_patches PRIVATE mfem_raytracing)
 
+# Full hard-seam leaf scene -> local degree-one T-spline strips -> baked
+# bilinear runtime leaves.  Strict mode gates JSON emission on the combined
+# source-ownership and geometric watertightness certificate.
+add_executable(export_tspline_bilinear_shell src/export_tspline_bilinear_shell.cpp)
+target_link_libraries(export_tspline_bilinear_shell PRIVATE mfem_raytracing)
+
 enable_testing()
+
+# Focused data/topology test for the degree-1 T-spline seam workflow.  Kept
+# separate from run_tests so the pipe integration fixture remains inspectable.
+add_executable(test_tspline_seam_workflow tests/test_tspline_seam_workflow.cpp)
+target_link_libraries(test_tspline_seam_workflow PRIVATE mfem_raytracing)
+add_test(NAME tspline_seam_workflow COMMAND test_tspline_seam_workflow ${CMAKE_SOURCE_DIR})
 
 add_executable(run_tests
     tests/main.cpp
@@ -89,6 +115,7 @@ add_executable(run_tests
     tests/test_curve_degree_reduction.cpp
     tests/test_surface_degree_reduction.cpp
     tests/test_surface_multistep_reduction.cpp
+    tests/test_tspline.cpp
 )
 target_link_libraries(run_tests PRIVATE mfem_raytracing)
 

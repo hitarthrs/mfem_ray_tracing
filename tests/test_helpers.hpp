@@ -88,6 +88,7 @@ void TestNURBSDegreeReduction();
 void TestCurveDegreeReduction();
 void TestSurfaceDegreeReduction();
 void TestSurfaceMultistepReduction();
+void TestTSpline();
 
 #ifdef MFEM_RAYTRACING_ENABLE_EMBREE
 void TestBilinearIntersect();

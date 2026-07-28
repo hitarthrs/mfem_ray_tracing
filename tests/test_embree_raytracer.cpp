@@ -223,6 +223,33 @@ void TestUnnormalizedDirectionThroughScene()
     CHECK_NEAR(hit.t, 0.5, 1e-4);
 }
 
+void TestCertifiedLeafSceneRegistration()
+{
+    LeafPatchScene diagnostic;
+    diagnostic.declares_rt_certification = true;
+    diagnostic.rt_certified = false;
+    LeafPatch leaf;
+    leaf.patch = MakeFlatPatch(2.0);
+    diagnostic.leaves.push_back(leaf);
+
+    bool rejected = false;
+    try
+    {
+        EmbreeRayTracer tracer;
+        tracer.RegisterLeafPatchScene(diagnostic);
+    }
+    catch (const std::runtime_error &)
+    {
+        rejected = true;
+    }
+    CHECK(rejected);
+
+    EmbreeRayTracer tracer;
+    tracer.RegisterLeafPatchScene(diagnostic, true);
+    tracer.CommitScene();
+    CHECK(tracer.PatchCount() == 1);
+}
+
 void TestRayQueryDiagnosticsCountCallbackOutcomes()
 {
     EmbreeRayTracer tracer;
@@ -358,6 +385,7 @@ void TestEmbreeRayTracer()
     TestSharedEdgeAndNearEdgeRaysAcrossDistances();
     TestGrazingTangentAndNearTangentRays();
     TestUnnormalizedDirectionThroughScene();
+    TestCertifiedLeafSceneRegistration();
     TestRayQueryDiagnosticsCountCallbackOutcomes();
     TestLeafSceneLoader();
     TestLeafSceneRayGrid();

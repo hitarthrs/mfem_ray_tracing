@@ -77,6 +77,15 @@ struct JsonValue
         }
         return string_value;
     }
+
+    bool AsBool() const
+    {
+        if (type != Type::Bool)
+        {
+            throw std::runtime_error("leaf patch JSON: expected a boolean");
+        }
+        return bool_value;
+    }
 };
 
 class JsonParser
@@ -408,6 +417,16 @@ LeafPatch ParseLeaf(const JsonValue &leaf_json)
     {
         leaf.role = role_it->second.AsString();
     }
+    const auto kind_it = leaf_json.object_items.find("kind");
+    if (kind_it != leaf_json.object_items.end())
+    {
+        leaf.kind = kind_it->second.AsString();
+    }
+    const auto interface_it = leaf_json.object_items.find("interface");
+    if (interface_it != leaf_json.object_items.end())
+    {
+        leaf.interface_id = interface_it->second.AsString();
+    }
     ReadDomain(leaf_json.At("u_domain_global"), leaf.u_domain_global);
     ReadDomain(leaf_json.At("v_domain_global"), leaf.v_domain_global);
     leaf.total_error = leaf_json.At("total_error").AsNumber();
@@ -472,6 +491,16 @@ std::vector<BilinearPatchPrimitive> LeafPatchScene::Patches() const
     return patches;
 }
 
+void LeafPatchScene::RequireRayTracingCertified(bool allow_diagnostic_shell) const
+{
+    if (declares_rt_certification && !rt_certified && !allow_diagnostic_shell)
+    {
+        throw std::runtime_error(
+            "leaf patch JSON declares rt_certified=false; refusing to register a diagnostic-only "
+            "T-spline shell for ray tracing (pass an explicit diagnostic override to inspect it)");
+    }
+}
+
 LeafPatchScene LoadLeafPatchScene(const std::string &json_path)
 {
     std::ifstream stream(json_path);
@@ -487,6 +516,22 @@ LeafPatchScene LoadLeafPatchScene(const std::string &json_path)
 
     LeafPatchScene scene;
     scene.surface_name = root.At("surface").string_value;
+    const auto certification_it = root.object_items.find("certification");
+    if (certification_it != root.object_items.end())
+    {
+        const JsonValue &certification = certification_it->second;
+        if (certification.type != JsonValue::Type::Object)
+        {
+            throw std::runtime_error("leaf patch JSON: certification must be an object");
+        }
+        const auto certified_it = certification.object_items.find("rt_certified");
+        if (certified_it == certification.object_items.end())
+        {
+            throw std::runtime_error("leaf patch JSON: certification is missing rt_certified");
+        }
+        scene.declares_rt_certification = true;
+        scene.rt_certified = certified_it->second.AsBool();
+    }
     const auto max_err_it = root.object_items.find("max_error");
     if (max_err_it != root.object_items.end())
     {
