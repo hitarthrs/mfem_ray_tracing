@@ -9,8 +9,9 @@ build-*/
 *.so
 .DS_Store
 
-# Retired sources now live under archive/retired/ (tracked). Keep this list
-# empty of live include/src paths so local accidents don't hide active code.
+# Local-only trees — do not track in git.
+archive/
+intersection_seeding_benchmark/
 
 python_experiments/.venv/
 python_experiments/outputs/
@@ -27,5 +28,4 @@ python_experiments/python_experiments.egg-info/
 **/__pycache__/
 **/*.pyc
 **/*.pyo
-archive/retired/src/test
 *.pch
