@@ -1,7 +1,7 @@
-#include "embree/raytracer.hpp"
+#include "mfem_raytracing/embree/raytracer.hpp"
 
-#include "bilinear_intersect.hpp"
-#include "embree/leaf_patch_loader.hpp"
+#include "mfem_raytracing/embree/bilinear_intersect.hpp"
+#include "mfem_raytracing/embree/leaf_patch_loader.hpp"
 
 #include <algorithm>
 #include <cmath>

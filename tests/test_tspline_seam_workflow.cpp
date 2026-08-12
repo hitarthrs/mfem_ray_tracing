@@ -1,14 +1,18 @@
-#include "embree/leaf_patch_loader.hpp"
-#include "hard_seam_bilinearization.hpp"
-#include "tspline_average_merge.hpp"
-#include "tspline_bilinear_ops.hpp"
-#include "tspline_leaf_assembly.hpp"
-#include "tspline_patch_interfaces.hpp"
-#include "tspline_degree_one_bake.hpp"
-#include "tspline_shell_composer.hpp"
-#include "tspline_shell_json.hpp"
-#include "tspline_shell_watertightness.hpp"
-#include "tspline_strip_builder.hpp"
+#include "mfem_raytracing/embree/leaf_patch_loader.hpp"
+#include "mfem_raytracing/pipeline/bake.hpp"
+#include "mfem_raytracing/pipeline/connect.hpp"
+#include "mfem_raytracing/pipeline/multi_patch_tmesh.hpp"
+#include "mfem_raytracing/pipeline/reduce.hpp"
+#include "mfem_raytracing/reduction/hard_seam_bilinearization.hpp"
+#include "mfem_raytracing/tspline/tspline_average_merge.hpp"
+#include "mfem_raytracing/tspline/tspline_bilinear_ops.hpp"
+#include "mfem_raytracing/tspline/tspline_leaf_assembly.hpp"
+#include "mfem_raytracing/tspline/tspline_patch_interfaces.hpp"
+#include "mfem_raytracing/tspline/tspline_degree_one_bake.hpp"
+#include "mfem_raytracing/tspline/tspline_shell_composer.hpp"
+#include "mfem_raytracing/tspline/tspline_shell_json.hpp"
+#include "mfem_raytracing/tspline/tspline_shell_watertightness.hpp"
+#include "mfem_raytracing/tspline/tspline_strip_builder.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -376,6 +380,17 @@ void TestPipeCase(const std::filesystem::path &root)
               "direct 0.05 pipe shell passes the error and RT certification gates");
         Check(resolved.leaves.size() == 2304,
               "direct pipe collar emits the expected exact refined leaf partition");
+
+        // Staged public API must match the Compose wrapper.
+        SeamAssembly assembly = ConnectPatchLeaves(direct_scene, catalog, resolved_options);
+        MultiPatchTMesh tmesh = BuildMultiPatchTMesh(std::move(assembly));
+        Check(tmesh.has_unified && !tmesh.components.empty(),
+              "BuildMultiPatchTMesh always materializes strip/interior components + unified chart");
+        Check(std::isfinite(tmesh.EvaluateComponent(0, 0.0, 0.0)[0]),
+              "non-RT EvaluateComponent works on the materialized multi-patch T-mesh");
+        const RtLeafScene staged = BakeForRayTracing(tmesh);
+        Check(staged.leaves.size() == resolved.leaves.size() && staged.ReadyForRayTracing(),
+              "Connect → Build → Bake matches ComposeBakedTsplineShell for the direct pipe");
     }
 
     // The compatibility artifact is useful for regression inspection, but its

@@ -8,7 +8,7 @@
  *     --curve-output tests/generated_curve_degree_reduction_cases.inc
  */
 
-#include "curve_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/curve_degree_reduction.hpp"
 #include "test_helpers.hpp"
 
 #include <algorithm>

@@ -1,4 +1,4 @@
-#include "b_spline_curve_reduction.hpp"
+#include "mfem_raytracing/reduction/b_spline_curve_reduction.hpp"
 #include "test_helpers.hpp"
 
 #include <algorithm>

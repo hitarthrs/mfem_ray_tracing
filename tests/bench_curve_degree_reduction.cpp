@@ -1,4 +1,4 @@
-#include "curve_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/curve_degree_reduction.hpp"
 
 #include <chrono>
 #include <cmath>

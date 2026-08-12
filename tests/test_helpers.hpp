@@ -2,8 +2,6 @@
 #define TEST_HELPERS_HPP
 
 #include "mfem.hpp"
-#include "ray.hpp"
-
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -53,31 +51,6 @@ inline std::vector<double> KnotsFromKV(const mfem::KnotVector &kv)
 inline int SplineDegreeFromKV(const mfem::KnotVector &kv)
 {
     return kv.GetOrder();
-}
-
-/** Single-sample wrapper around mfem::Mesh::FindPoints for tests. */
-inline bool FindElemAndIP(const Ray &ray,
-                          mfem::Mesh &mesh,
-                          double t,
-                          int &elem,
-                          mfem::IntegrationPoint &ip)
-{
-    const int sd = mesh.SpaceDimension();
-    mfem::DenseMatrix point_mat(sd, 1);
-    mfem::Vector point;
-    ray.Evaluate(t, point);
-    for (int d = 0; d < sd; ++d)
-    {
-        point_mat(d, 0) = point(d);
-    }
-
-    mfem::Array<int> elem_arr(1);
-    mfem::Array<mfem::IntegrationPoint> ips(1);
-    mesh.FindPoints(point_mat, elem_arr, ips);
-
-    elem = elem_arr[0];
-    ip = ips[0];
-    return elem >= 0;
 }
 
 void TestCartesianMesh();

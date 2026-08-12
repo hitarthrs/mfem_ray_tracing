@@ -7,7 +7,7 @@
  *     --surface-output tests/generated_surface_degree_reduction_cases.inc
  */
 
-#include "surface_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/surface_degree_reduction.hpp"
 #include "surface_golden_cases.hpp"
 #include "test_helpers.hpp"
 

@@ -1,0 +1,20 @@
+loaded 16 patches from intersection_seeding_benchmark/surfaces/manifest.csv
+=== tolerance 0.5 ===
+=== tolerance 0.1 ===
+=== tolerance 0.02 ===
+wrote intersection_seeding_benchmark/results.csv
+
+SUMMARY (per tolerance x group x strategy)
+tol      group  strategy  n      mean_it  med_it  max_it  fail%   seedmiss%  newton_us  seed_us
+  0.500   flat     naive    4608    5.344       5       6   0.000      0.000     53.531    0.000
+  0.500   flat  bilinear    4608    3.269       3       6   0.000      1.389     32.604    2.103
+  0.500   bend     naive    4608    4.749       5      50  31.424      0.000     45.468    0.000
+  0.500   bend  bilinear    4608    3.128       3      13   5.816      9.397     29.922    2.439
+  0.100   flat     naive    4608    5.344       5       6   0.000      0.000     51.290    0.000
+  0.100   flat  bilinear    4608    2.661       3       3   0.000      0.000     25.738    2.624
+  0.100   bend     naive    4608    4.749       5      50  31.424      0.000     45.405    0.000
+  0.100   bend  bilinear    4608    3.115       3      24   9.310     13.932     29.816    3.446
+  0.020   flat     naive    4608    5.344       5       6   0.000      0.000     50.374    0.000
+  0.020   flat  bilinear    4608    2.535       3       3   0.000      0.000     24.028    5.484
+  0.020   bend     naive    4608    4.749       5      50  31.424      0.000     46.676    0.000
+  0.020   bend  bilinear    4608    3.293       3      50  22.808     39.844     32.828    4.521

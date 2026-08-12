@@ -1,4 +1,4 @@
-#include "bezier_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/bezier_degree_reduction.hpp"
 #include "test_helpers.hpp"
 
 #include <cmath>

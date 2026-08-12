@@ -1,4 +1,4 @@
-#include "surface_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/surface_degree_reduction.hpp"
 
 #include <chrono>
 #include <cmath>

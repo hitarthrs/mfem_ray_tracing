@@ -2,8 +2,8 @@
 // against bilinear patch user geometries, plus loading the leaf-patch JSON
 // exported by python_experiments/multiple_step_degree_reduction_surfaces.
 
-#include "embree/leaf_patch_loader.hpp"
-#include "embree/raytracer.hpp"
+#include "mfem_raytracing/embree/leaf_patch_loader.hpp"
+#include "mfem_raytracing/embree/raytracer.hpp"
 #include "test_helpers.hpp"
 
 #include <cmath>

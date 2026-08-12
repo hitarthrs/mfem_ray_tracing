@@ -14,34 +14,37 @@ set(EMBREE_DIR "" CACHE PATH "Embree install prefix (optional)")
 
 # Core library: degree reduction → watertight bilinear leaves (+ mesh helpers).
 add_library(mfem_raytracing
-    src/cartesian_mesh_builder.cpp
-    src/cartesian_mesh_naming.cpp
-    src/nurbs_mesh_operations.cpp
-    src/bezier_degree_reduction.cpp
-    src/b_spline_curve_reduction.cpp
-    src/nurbs_degree_reduction.cpp
-    src/curve_reduction_domain.cpp
-    src/curve_reduction_error_budget.cpp
-    src/curve_degree_reduction.cpp
-    src/surface_reduction_domain.cpp
-    src/surface_degree_reduction.cpp
-    src/surface_multistep_reduction.cpp
-    src/bilinear_leaf_extraction.cpp
-    src/hard_seam_bilinearization.cpp
-    src/leaf_patch_loader.cpp
-    src/tspline.cpp
-    src/tspline_seam_types.cpp
-    src/tspline_patch_interfaces.cpp
-    src/tspline_leaf_assembly.cpp
-    src/tspline_bilinear_ops.cpp
-    src/tspline_average_merge.cpp
-    src/tspline_strip_builder.cpp
-    src/tspline_degree_one_bake.cpp
-    src/tspline_error_accounting.cpp
-    src/tspline_corner_collar.cpp
-    src/tspline_shell_watertightness.cpp
-    src/tspline_shell_composer.cpp
-    src/tspline_shell_json.cpp
+    src/mesh/cartesian_mesh_builder.cpp
+    src/mesh/cartesian_mesh_naming.cpp
+    src/mesh/nurbs_mesh_operations.cpp
+    src/reduction/bezier_degree_reduction.cpp
+    src/reduction/b_spline_curve_reduction.cpp
+    src/reduction/nurbs_degree_reduction.cpp
+    src/reduction/curve_reduction_domain.cpp
+    src/reduction/curve_reduction_error_budget.cpp
+    src/reduction/curve_degree_reduction.cpp
+    src/reduction/surface_reduction_domain.cpp
+    src/reduction/surface_degree_reduction.cpp
+    src/reduction/surface_multistep_reduction.cpp
+    src/reduction/bilinear_leaf_extraction.cpp
+    src/reduction/hard_seam_bilinearization.cpp
+    # Leaf JSON I/O is used by reduction/shell workflows without Embree.
+    src/embree/leaf_patch_loader.cpp
+    src/pipeline/reduce.cpp
+    src/pipeline/multi_patch_tmesh.cpp
+    src/tspline/tspline.cpp
+    src/tspline/tspline_seam_types.cpp
+    src/tspline/tspline_patch_interfaces.cpp
+    src/tspline/tspline_leaf_assembly.cpp
+    src/tspline/tspline_bilinear_ops.cpp
+    src/tspline/tspline_average_merge.cpp
+    src/tspline/tspline_strip_builder.cpp
+    src/tspline/tspline_degree_one_bake.cpp
+    src/tspline/tspline_error_accounting.cpp
+    src/tspline/tspline_corner_collar.cpp
+    src/tspline/tspline_shell_watertightness.cpp
+    src/tspline/tspline_shell_composer.cpp
+    src/tspline/tspline_shell_json.cpp
 )
 target_include_directories(mfem_raytracing PUBLIC include)
 target_link_libraries(mfem_raytracing PUBLIC mfem)
@@ -53,11 +56,9 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   include(Embree)
   mfem_raytracing_find_embree()
 
-  file(GLOB MFEM_RAYTRACING_EMBREE_EXTRA_SOURCES CONFIGURE_DEPENDS
-       "${CMAKE_CURRENT_SOURCE_DIR}/src/embree/*.cpp")
   add_library(mfem_raytracing_embree
-      src/bilinear_intersect.cpp
-      ${MFEM_RAYTRACING_EMBREE_EXTRA_SOURCES}
+      src/embree/bilinear_intersect.cpp
+      src/embree/raytracer.cpp
   )
   target_include_directories(mfem_raytracing_embree
     PUBLIC
@@ -65,10 +66,13 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   )
   mfem_raytracing_link_embree(mfem_raytracing_embree)
   target_link_libraries(mfem_raytracing_embree PUBLIC mfem_raytracing)
-  message(STATUS "mfem_raytracing_embree sources: src/bilinear_intersect.cpp ${MFEM_RAYTRACING_EMBREE_EXTRA_SOURCES}")
+  message(STATUS "mfem_raytracing_embree: bilinear_intersect + raytracer")
 endif()
 
-add_executable(make_cart_mesh src/make_cart_mesh.cpp)
+# ------------------------------------------------------------------------------
+# Apps / tools (not part of the library)
+# ------------------------------------------------------------------------------
+add_executable(make_cart_mesh apps/make_cart_mesh.cpp)
 target_link_libraries(make_cart_mesh PRIVATE mfem_raytracing)
 
 add_executable(bench_curve_degree_reduction tests/bench_curve_degree_reduction.cpp)
@@ -78,23 +82,23 @@ add_executable(bench_surface_degree_reduction tests/bench_surface_degree_reducti
 target_link_libraries(bench_surface_degree_reduction PRIVATE mfem_raytracing)
 
 # Multi-step reduction -> bilinear leaf AABB JSON (demo_leaf_bboxes.py port).
-add_executable(export_leaf_bboxes src/export_leaf_bboxes.cpp)
+add_executable(export_leaf_bboxes apps/export_leaf_bboxes.cpp)
 target_include_directories(export_leaf_bboxes PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 target_link_libraries(export_leaf_bboxes PRIVATE mfem_raytracing)
 
 # Watertight (conforming + coalesce) bilinear patch export for any (p, q)
 # surface; input surfaces from python_experiments/export_surface_inputs.py.
-add_executable(export_bilinear_patches src/export_bilinear_patches.cpp)
+add_executable(export_bilinear_patches apps/export_bilinear_patches.cpp)
 target_link_libraries(export_bilinear_patches PRIVATE mfem_raytracing)
 
 # Full multi-span catalog patches -> independent hard-seam bilinear leaves.
-add_executable(export_hard_seam_patches src/export_hard_seam_patches.cpp)
+add_executable(export_hard_seam_patches apps/export_hard_seam_patches.cpp)
 target_link_libraries(export_hard_seam_patches PRIVATE mfem_raytracing)
 
 # Full hard-seam leaf scene -> local degree-one T-spline strips -> baked
 # bilinear runtime leaves.  Strict mode gates JSON emission on the combined
 # source-ownership and geometric watertightness certificate.
-add_executable(export_tspline_bilinear_shell src/export_tspline_bilinear_shell.cpp)
+add_executable(export_tspline_bilinear_shell apps/export_tspline_bilinear_shell.cpp)
 target_link_libraries(export_tspline_bilinear_shell PRIVATE mfem_raytracing)
 
 enable_testing()
@@ -126,10 +130,10 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   )
   target_link_libraries(run_tests PRIVATE mfem_raytracing_embree)
 
-  add_executable(render_leaf_patches src/render_leaf_patches.cpp)
+  add_executable(render_leaf_patches apps/render_leaf_patches.cpp)
   target_link_libraries(render_leaf_patches PRIVATE mfem_raytracing_embree mfem_raytracing)
 
-  add_executable(export_scene_json src/export_scene_json.cpp)
+  add_executable(export_scene_json apps/export_scene_json.cpp)
   target_link_libraries(export_scene_json PRIVATE mfem_raytracing_embree mfem_raytracing)
 
   # Bilinear-seeded vs. naive Newton seeding benchmark (needs the Embree BVH).
@@ -140,7 +144,7 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
     pkg_check_modules(SDL2 QUIET IMPORTED_TARGET sdl2)
   endif()
   if(SDL2_FOUND)
-    add_executable(scene_viewer src/scene_viewer.cpp)
+    add_executable(scene_viewer apps/scene_viewer.cpp)
     target_link_libraries(scene_viewer PRIVATE mfem_raytracing_embree mfem_raytracing PkgConfig::SDL2)
   else()
     message(STATUS "SDL2 not found; skipping native scene_viewer")

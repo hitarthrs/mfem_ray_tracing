@@ -1,6 +1,6 @@
-#include "cartesian_mesh_builder.hpp"
-#include "cartesian_mesh_naming.hpp"
-#include "cartesian_mesh_spec.hpp"
+#include "mfem_raytracing/mesh/cartesian_mesh_builder.hpp"
+#include "mfem_raytracing/mesh/cartesian_mesh_naming.hpp"
+#include "mfem_raytracing/mesh/cartesian_mesh_spec.hpp"
 #include "test_helpers.hpp"
 
 #include <stdexcept>

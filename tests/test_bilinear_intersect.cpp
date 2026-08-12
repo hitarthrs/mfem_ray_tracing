@@ -4,8 +4,8 @@
 // hand-built Embree argument structs — no RTCDevice/RTCScene is needed since the
 // callbacks only read/write their POD arguments.
 
-#include "bilinear_intersect.hpp"
-#include "embree/bilinear_patch_geometry.hpp"
+#include "mfem_raytracing/embree/bilinear_intersect.hpp"
+#include "mfem_raytracing/embree/bilinear_patch_geometry.hpp"
 #include "test_helpers.hpp"
 
 #include <cmath>

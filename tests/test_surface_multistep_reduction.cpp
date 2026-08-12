@@ -10,11 +10,11 @@
  *       --json multiple_step_degree_reduction_surfaces/outputs/d4_leaf_bboxes.json
  */
 
-#include "bilinear_leaf_extraction.hpp"
-#include "embree/leaf_patch_loader.hpp"
-#include "surface_conforming_reduction.hpp"
+#include "mfem_raytracing/reduction/bilinear_leaf_extraction.hpp"
+#include "mfem_raytracing/embree/leaf_patch_loader.hpp"
+#include "mfem_raytracing/reduction/surface_conforming_reduction.hpp"
 #include "surface_golden_cases.hpp"
-#include "surface_multistep_reduction.hpp"
+#include "mfem_raytracing/reduction/surface_multistep_reduction.hpp"
 #include "test_helpers.hpp"
 
 #include <cmath>

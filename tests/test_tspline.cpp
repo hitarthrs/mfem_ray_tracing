@@ -1,5 +1,5 @@
 #include "test_helpers.hpp"
-#include "tspline.hpp"
+#include "mfem_raytracing/tspline/tspline.hpp"
 
 #include <cmath>
 

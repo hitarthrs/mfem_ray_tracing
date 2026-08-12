@@ -7,7 +7,7 @@
  *     --output tests/generated_nurbs_golden_cases.inc
  */
 
-#include "nurbs_degree_reduction.hpp"
+#include "mfem_raytracing/reduction/nurbs_degree_reduction.hpp"
 #include "test_helpers.hpp"
 
 #include "mfem.hpp"

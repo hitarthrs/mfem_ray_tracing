@@ -53,7 +53,7 @@ Cartesian mesh builders and NURBS mesh helpers used by examples and tests.
 
 ### 5. T-spline geometric representations
 
-`include/tspline.hpp` provides a compact implementation of the foundational
+`include/mfem_raytracing/tspline/tspline.hpp` provides a compact implementation of the foundational
 representations in Sederberg, Zheng, Bakenov, and Nasri, *T-splines and
 T-NURCCs* (2003): rectilinear knot-interval T-meshes, cubic local knot-vector
 tracing, PB-spline blending (Eq. 1-4), rational weights, and two-bay
@@ -196,18 +196,22 @@ Embree discovery lives in [`cmake/Embree.cmake`](cmake/Embree.cmake). Omit `-DMF
 
 | Path | Contents |
 | --- | --- |
-| `include/` · `src/` | Core library (`mfem_raytracing`) |
-| `include/embree/` · `src/embree/` | Embree tracer & user-geometry callbacks |
+| `include/mfem_raytracing/reduction/` · `src/reduction/` | Curve/surface degree reduction + leaf extraction |
+| `include/mfem_raytracing/tspline/` · `src/tspline/` | T-spline shell composer stack |
+| `include/mfem_raytracing/mesh/` · `src/mesh/` | Cartesian / NURBS mesh helpers |
+| `include/mfem_raytracing/embree/` · `src/embree/` | Embree tracer, leaf JSON I/O, bilinear intersect |
+| `apps/` | CLI tools (`export_*`, `render_*`, `make_cart_mesh`, viewers) |
+| `archive/retired/` | Old experiments removed from the live tree |
 | `cmake/` | Embree CMake helpers |
-| `tests/` | Unit tests (`run_tests`) and small mesh dump utilities |
+| `tests/` | Unit tests (`run_tests`) |
 | `meshes/` | Example Cartesian and NURBS meshes |
 
 Principal reduction / tracing headers:
 
-- [`include/surface_conforming_reduction.hpp`](include/surface_conforming_reduction.hpp) — watertight multi-step surface reduction + coalesce (+ hard seams)
-- [`include/bilinear_leaf_extraction.hpp`](include/bilinear_leaf_extraction.hpp) — bilinear leaf collection for BVH / export
-- [`include/embree/raytracer.hpp`](include/embree/raytracer.hpp) — Embree scene, `Intersect` / `IntersectAll` / `Occluded`
-- [`include/bilinear_intersect.hpp`](include/bilinear_intersect.hpp) — analytic bilinear patch intersection used by Embree callbacks
+- [`include/mfem_raytracing/reduction/surface_conforming_reduction.hpp`](include/mfem_raytracing/reduction/surface_conforming_reduction.hpp) — watertight multi-step surface reduction + coalesce (+ hard seams)
+- [`include/mfem_raytracing/reduction/bilinear_leaf_extraction.hpp`](include/mfem_raytracing/reduction/bilinear_leaf_extraction.hpp) — bilinear leaf collection for BVH / export
+- [`include/mfem_raytracing/embree/raytracer.hpp`](include/mfem_raytracing/embree/raytracer.hpp) — Embree scene, `Intersect` / `IntersectAll` / `Occluded`
+- [`include/mfem_raytracing/embree/bilinear_intersect.hpp`](include/mfem_raytracing/embree/bilinear_intersect.hpp) — analytic bilinear patch intersection used by Embree callbacks
 
 ---
 

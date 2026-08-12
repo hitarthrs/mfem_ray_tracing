@@ -1,4 +1,4 @@
-#include "nurbs_mesh_operations.hpp"
+#include "mfem_raytracing/mesh/nurbs_mesh_operations.hpp"
 #include "test_helpers.hpp"
 
 #include <iostream>
