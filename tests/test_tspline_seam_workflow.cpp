@@ -251,8 +251,8 @@ void TestWatertightnessCertificate()
 
 void TestPipeCase(const std::filesystem::path &root)
 {
-    const auto catalog_path = root / "python_experiments/multiple_step_degree_reduction_surfaces/pipe_nurbs_border_patches.json";
-    const auto leaves_path = root / "python_experiments/multiple_step_degree_reduction_surfaces/outputs/pipe_patch_all_e_0_05_hard_seams.json";
+    const auto catalog_path = root / "tests/test-jsons/pipe_nurbs_border_patches.json";
+    const auto leaves_path = root / "tests/test-jsons/pipe_patch_all_e_0_05_hard_seams.json";
     Check(std::filesystem::is_regular_file(catalog_path), "pipe NURBS catalog fixture exists");
     Check(std::filesystem::is_regular_file(leaves_path), "pipe hard-seam leaf fixture exists");
     if (!std::filesystem::is_regular_file(catalog_path) || !std::filesystem::is_regular_file(leaves_path)) { return; }
@@ -355,8 +355,7 @@ void TestPipeCase(const std::filesystem::path &root)
     // average-merge constraints.  This is intentionally not compared to the
     // legacy full-strip leaf count above; it is a different, non-overlapping
     // RT construction with no phantom duplicate coverage.
-    const auto direct_leaves_path = root /
-        "python_experiments/multiple_step_degree_reduction_surfaces/outputs/all_patches_0_05.json";
+    const auto direct_leaves_path = root / "tests/test-jsons/all_patches_0_05.json";
     Check(std::filesystem::is_regular_file(direct_leaves_path),
           "direct 0.05 all-patches fixture exists");
     if (std::filesystem::is_regular_file(direct_leaves_path))

@@ -2,12 +2,9 @@
  * @file test_surface_multistep_reduction.cpp
  * @brief Multi-step surface reduction + bilinear leaf extraction (Algorithm 1).
  *
- * The end-to-end golden fixture is the Python pipeline export
- *   python_experiments/multiple_step_degree_reduction_surfaces/outputs/d4_leaf_bboxes.json
- * regenerated via
- *   .venv/bin/python -m multiple_step_degree_reduction_surfaces.demo_leaf_bboxes \
- *       -s d4_s_shaped_peak_saddle --backend approach_4 --max-error 1.0 \
- *       --json multiple_step_degree_reduction_surfaces/outputs/d4_leaf_bboxes.json
+ * The end-to-end golden fixture is tests/test-jsons/d4_leaf_bboxes.json
+ * (regenerate via multiple_step_degree_reduction_surfaces.demo_leaf_bboxes and
+ * copy into tests/test-jsons/ if the golden changes).
  */
 
 #include "mfem_raytracing/reduction/bilinear_leaf_extraction.hpp"
@@ -29,8 +26,7 @@ namespace
 
 #include "generated_surface_degree_reduction_cases.inc"
 
-constexpr const char *kGoldenLeafJson =
-    "python_experiments/multiple_step_degree_reduction_surfaces/outputs/d4_leaf_bboxes.json";
+constexpr const char *kGoldenLeafJson = "tests/test-jsons/d4_leaf_bboxes.json";
 
 mfem_raytracing::SurfaceData PeakSaddleInput()
 {

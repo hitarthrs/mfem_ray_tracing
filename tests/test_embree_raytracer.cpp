@@ -1,6 +1,6 @@
 // Tests for EmbreeRayTracer: scene management, first-hit and occlusion queries
 // against bilinear patch user geometries, plus loading the leaf-patch JSON
-// exported by python_experiments/multiple_step_degree_reduction_surfaces.
+// fixtures under tests/test-jsons/.
 
 #include "mfem_raytracing/embree/leaf_patch_loader.hpp"
 #include "mfem_raytracing/embree/raytracer.hpp"
@@ -13,8 +13,7 @@ using namespace mfem_raytracing;
 namespace
 {
 
-constexpr const char *kLeafJsonPath =
-    "python_experiments/multiple_step_degree_reduction_surfaces/outputs/d4_leaf_bboxes.json";
+constexpr const char *kLeafJsonPath = "tests/test-jsons/d4_leaf_bboxes.json";
 
 BilinearPatchPrimitive MakeFlatPatch(double z_value, double half_extent = 1.0)
 {
