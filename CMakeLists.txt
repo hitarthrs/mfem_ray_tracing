@@ -136,8 +136,10 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   add_executable(export_scene_json apps/export_scene_json.cpp)
   target_link_libraries(export_scene_json PRIVATE mfem_raytracing_embree mfem_raytracing)
 
-  # Bilinear-seeded vs. naive Newton seeding benchmark (needs the Embree BVH).
-  add_subdirectory(intersection_seeding_benchmark)
+  # Bilinear-seeded vs. naive Newton seeding benchmark (optional local tree).
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/intersection_seeding_benchmark/CMakeLists.txt")
+    add_subdirectory(intersection_seeding_benchmark)
+  endif()
 
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
