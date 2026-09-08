@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <map>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -14,6 +16,27 @@ namespace mfem_raytracing
 {
 
 struct LeafPatchScene;
+
+enum class PatchStoragePolicy { AutoIndexed, Dense };
+
+struct BvhBuildOptions
+{
+    RTCBuildQuality quality = RTC_BUILD_QUALITY_HIGH;
+    bool compact = false;
+};
+
+struct PatchStorageStatistics
+{
+    std::size_t dense_equivalent_bytes = 0;
+    /// Allocated primitive/table buffer capacity; excludes BVH, allocator and
+    /// container bookkeeping, caller-owned scenes and temporary build tables.
+    std::size_t buffer_bytes = 0;
+    std::size_t indexed_geometries = 0;
+    std::size_t dense_geometries = 0;
+    /// GetPatch compatibility copies, separate from buffer_bytes. Map node
+    /// bookkeeping and allocation overhead are not included here.
+    std::size_t compatibility_patch_bytes = 0;
+};
 
 /// Result of a first-hit ray query against bilinear patch geometry.
 struct RayHitRecord
@@ -60,13 +83,17 @@ class EmbreeRayTracer
 {
 public:
     EmbreeRayTracer();
+    explicit EmbreeRayTracer(PatchStoragePolicy storage_policy);
+    /// Tune static BVH construction. Robust traversal remains enabled.
+    EmbreeRayTracer(PatchStoragePolicy storage_policy, const BvhBuildOptions &build_options);
     ~EmbreeRayTracer();
 
     EmbreeRayTracer(const EmbreeRayTracer &) = delete;
     EmbreeRayTracer &operator=(const EmbreeRayTracer &) = delete;
 
     /// Register one user geometry holding `patches`; the tracer takes ownership
-    /// of the patch storage (Embree keeps raw pointers into it). `box_bump`
+    /// of the patch data; AutoIndexed shares exact positions/weight tuples
+    /// when that reduces buffer capacity, otherwise retains dense storage. `box_bump`
     /// pads every per-patch BVH box by a constant amount. Returns the Embree
     /// geometry id, which appears as RayHitRecord::geom_id in query results.
     unsigned int RegisterPatches(std::vector<BilinearPatchPrimitive> patches,
@@ -126,21 +153,36 @@ public:
                   double tfar = std::numeric_limits<double>::infinity()) const;
 
     /// The patch behind a query result, or nullptr for an unknown id pair.
+    /// For indexed geometry this lazily caches an exact compatibility copy.
+    /// Returned pointers stay valid until tracer destruction. Use CopyPatch
+    /// for bulk inspection without accumulating compatibility copies.
     const BilinearPatchPrimitive *GetPatch(unsigned int geom_id, unsigned int prim_id) const;
+
+    bool CopyPatch(unsigned int geom_id, unsigned int prim_id,
+                   BilinearPatchPrimitive &patch) const;
+    PatchStorageStatistics StorageStatistics() const;
 
     /// Total number of patches across all registered geometries.
     std::size_t PatchCount() const;
+
+    /// The underlying Embree device, for instrumentation such as
+    /// DeviceMemoryMonitor. Attach any monitor before CommitScene().
+    RTCDevice Device() const { return device_; }
 
 private:
     struct GeometrySlot
     {
         std::vector<BilinearPatchPrimitive> patches;
+        std::unique_ptr<IndexedBilinearPatchStorage> indexed;
+        mutable std::mutex cache_mutex;
+        mutable std::map<unsigned int, BilinearPatchPrimitive> compatibility_cache;
         BilinearPatchGeometryData data;
     };
 
     RTCDevice device_ = nullptr;
     RTCScene scene_ = nullptr;
     bool committed_ = false;
+    PatchStoragePolicy storage_policy_ = PatchStoragePolicy::AutoIndexed;
     // Heap slots so the buffers Embree points at survive map rehashing.
     std::unordered_map<unsigned int, std::unique_ptr<GeometrySlot>> geometry_slots_;
 };
