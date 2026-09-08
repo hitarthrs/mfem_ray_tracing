@@ -30,6 +30,7 @@ add_library(mfem_raytracing
     src/reduction/hard_seam_bilinearization.cpp
     # Leaf JSON I/O is used by reduction/shell workflows without Embree.
     src/embree/leaf_patch_loader.cpp
+    src/embree/indexed_patch_storage.cpp
     src/pipeline/reduce.cpp
     src/pipeline/multi_patch_tmesh.cpp
     src/tspline/tspline.cpp
@@ -58,6 +59,8 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
 
   add_library(mfem_raytracing_embree
       src/embree/bilinear_intersect.cpp
+      src/embree/bvh_tree_stats.cpp
+      src/embree/device_memory_monitor.cpp
       src/embree/raytracer.cpp
   )
   target_include_directories(mfem_raytracing_embree
@@ -136,6 +139,13 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   add_executable(export_scene_json apps/export_scene_json.cpp)
   target_link_libraries(export_scene_json PRIVATE mfem_raytracing_embree mfem_raytracing)
 
+  # BVH footprint: tessellated triangle mesh vs. bilinear patch primitives.
+  add_executable(bvh_memory_report apps/bvh_memory_report.cpp)
+  target_link_libraries(bvh_memory_report PRIVATE mfem_raytracing_embree mfem_raytracing)
+
+  add_executable(bench_ray_queries tests/bench_ray_queries.cpp)
+  target_link_libraries(bench_ray_queries PRIVATE mfem_raytracing_embree)
+
   # Bilinear-seeded vs. naive Newton seeding benchmark (optional local tree).
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/intersection_seeding_benchmark/CMakeLists.txt")
     add_subdirectory(intersection_seeding_benchmark)
@@ -148,6 +158,11 @@ if(MFEM_RAYTRACING_ENABLE_EMBREE)
   if(SDL2_FOUND)
     add_executable(scene_viewer apps/scene_viewer.cpp)
     target_link_libraries(scene_viewer PRIVATE mfem_raytracing_embree mfem_raytracing PkgConfig::SDL2)
+
+    # Separate, fully ray-traced interactive lab. Every displayed surface
+    # pixel and every selection query goes through Embree bilinear geometry.
+    add_executable(embree_surface_lab apps/embree_surface_lab.cpp)
+    target_link_libraries(embree_surface_lab PRIVATE mfem_raytracing_embree mfem_raytracing PkgConfig::SDL2)
   else()
     message(STATUS "SDL2 not found; skipping native scene_viewer")
   endif()
