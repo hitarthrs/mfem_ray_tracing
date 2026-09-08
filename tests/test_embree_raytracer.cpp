@@ -7,6 +7,8 @@
 #include "test_helpers.hpp"
 
 #include <cmath>
+#include <cstring>
+#include <future>
 
 using namespace mfem_raytracing;
 
@@ -374,10 +376,210 @@ void TestLeafSceneRayGrid()
     CHECK(hits > n * n * 95 / 100);
 }
 
+void CheckSameHit(const RayHitRecord &a, const RayHitRecord &b)
+{
+    CHECK(a.hit == b.hit);
+    if (!a.hit || !b.hit) { return; }
+    CHECK(a.t == b.t);
+    CHECK(a.u == b.u);
+    CHECK(a.v == b.v);
+    CHECK(a.geom_id == b.geom_id);
+    CHECK(a.prim_id == b.prim_id);
+    for (int i = 0; i < 3; ++i) { CHECK(a.Ng[i] == b.Ng[i]); }
+}
+
+void CheckSamePatch(const BilinearPatchPrimitive &a, const BilinearPatchPrimitive &b)
+{
+    CHECK(a.rational == b.rational);
+    CHECK(std::memcmp(a.control_points, b.control_points, sizeof(a.control_points)) == 0);
+    CHECK(std::memcmp(a.weights, b.weights, sizeof(a.weights)) == 0);
+}
+
+void CompareStorageQueries(const std::vector<BilinearPatchPrimitive> &patches)
+{
+    EmbreeRayTracer compact;
+    EmbreeRayTracer dense(PatchStoragePolicy::Dense);
+    compact.RegisterPatches(patches);
+    dense.RegisterPatches(patches);
+    compact.CommitScene();
+    dense.CommitScene();
+    CHECK(compact.StorageStatistics().indexed_geometries == 1);
+    // Include misses, exact grid edges/corners, oblique and unnormalized rays.
+    for (int y = -1; y <= 9; ++y)
+    {
+        for (int x = -1; x <= 9; ++x)
+        {
+            const double origin[3] = {x * 0.5, y * 0.5, -2.0};
+            for (const double dx : {0.0, 0.125})
+            {
+                const double dir[3] = {dx, 0.0, 2.0};
+                CheckSameHit(compact.Intersect(origin, dir), dense.Intersect(origin, dir));
+                CheckSameHit(compact.IntersectBruteForce(origin, dir), dense.IntersectBruteForce(origin, dir));
+                CHECK(compact.Occluded(origin, dir) == dense.Occluded(origin, dir));
+                CHECK(compact.Occluded(origin, dir, 0.0, 0.5) == dense.Occluded(origin, dir, 0.0, 0.5));
+                const auto a = compact.IntersectAll(origin, dir);
+                const auto b = dense.IntersectAll(origin, dir);
+                CHECK(a.size() == b.size());
+                for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) { CheckSameHit(a[i], b[i]); }
+                const auto aa = compact.IntersectAllBruteForce(origin, dir);
+                const auto bb = dense.IntersectAllBruteForce(origin, dir);
+                CHECK(aa.size() == bb.size());
+                for (std::size_t i = 0; i < std::min(aa.size(), bb.size()); ++i) { CheckSameHit(aa[i], bb[i]); }
+            }
+        }
+    }
+    CHECK(compact.StorageStatistics().compatibility_patch_bytes == 0);
+}
+
+void TestIndexedStorage()
+{
+    std::vector<BilinearPatchPrimitive> patches;
+    for (int layer = 0; layer < 2; ++layer)
+    {
+        for (int y = 0; y < 4; ++y)
+        {
+            for (int x = 0; x < 4; ++x)
+            {
+                auto patch = MakeFlatPatchRange(x, x + 1, y, y + 1, layer);
+                patch.rational = ((x + y) % 2 == 0);
+                for (int c = 0; c < 4; ++c)
+                {
+                    patch.control_points[c][2] += 0.125 * patch.control_points[c][0] * patch.control_points[c][1];
+                    patch.weights[c] = c + 1.0;
+                }
+                patches.push_back(patch);
+            }
+        }
+    }
+    CompareStorageQueries(patches);
+    CompareStorageQueries(LoadLeafPatchScene(kLeafJsonPath).Patches());
+
+    EmbreeRayTracer tracer;
+    const auto id = tracer.RegisterPatches(patches);
+    tracer.CommitScene();
+    const auto stats = tracer.StorageStatistics();
+    CHECK(stats.indexed_geometries == 1);
+    CHECK(stats.buffer_bytes < stats.dense_equivalent_bytes / 2);
+    for (std::size_t i = 0; i < patches.size(); ++i)
+    {
+        BilinearPatchPrimitive copy;
+        CHECK(tracer.CopyPatch(id, static_cast<unsigned int>(i), copy));
+        CheckSamePatch(copy, patches[i]);
+    }
+    CHECK(tracer.StorageStatistics().compatibility_patch_bytes == 0);
+    const auto *first = tracer.GetPatch(id, 0);
+    CHECK(first != nullptr);
+    // Concurrent compatibility lookups must produce stable, exact pointers.
+    std::vector<std::future<const BilinearPatchPrimitive *>> readers;
+    for (int i = 0; i < 8; ++i)
+    {
+        readers.push_back(std::async(std::launch::async, [&tracer, id]() { return tracer.GetPatch(id, 0); }));
+    }
+    for (auto &reader : readers) { CHECK(reader.get() == first); }
+    for (std::size_t i = 1; i < patches.size(); ++i) { tracer.GetPatch(id, static_cast<unsigned int>(i)); }
+    tracer.RegisterPatches({MakeFlatPatch(8.0)});
+    tracer.CommitScene();
+    CHECK(tracer.GetPatch(id, 0) == first);
+    if (first) { CheckSamePatch(*first, patches[0]); }
+    BilinearPatchPrimitive copy;
+    CHECK(!tracer.CopyPatch(id, 99999, copy));
+    CHECK(tracer.GetPatch(id, 99999) == nullptr);
+    CHECK(tracer.GetPatch(RTC_INVALID_GEOMETRY_ID, 0) == nullptr);
+
+    // A disconnected patch costs more indexed; AutoIndexed keeps the dense path.
+    EmbreeRayTracer small;
+    small.RegisterPatches({MakeFlatPatch(0.0)});
+    CHECK(small.StorageStatistics().dense_geometries == 1);
+    CHECK(small.StorageStatistics().buffer_bytes == sizeof(BilinearPatchPrimitive));
+    EmbreeRayTracer empty;
+    empty.RegisterPatches({});
+    CHECK(empty.PatchCount() == 0);
+    CHECK(empty.StorageStatistics().buffer_bytes == 0);
+
+    // No approximate merging: signed zero, sub-float differences and even
+    // unused NaN weights survive the encoding exactly. Do not trace NaN data.
+    auto special = MakeFlatPatch(0.0);
+    special.control_points[0][2] = -0.0;
+    special.control_points[1][0] = std::nextafter(special.control_points[0][0], 0.0);
+    special.weights[0] = std::numeric_limits<double>::quiet_NaN();
+    IndexedBilinearPatchStorage exact({special});
+    CheckSamePatch(exact.Load(0), special);
+}
+
+void TestCachedFramesAndBvhOptions()
+{
+    std::vector<BilinearPatchPrimitive> patches;
+    for (int y = 0; y < 4; ++y)
+    {
+        for (int x = 0; x < 4; ++x)
+        {
+            auto patch = MakeFlatPatchRange(x, x + 1, y, y + 1, 1.0);
+            patch.rational = true;
+            for (int c = 0; c < 4; ++c) { patch.weights[c] = c + 1.0; }
+            patches.push_back(patch);
+        }
+    }
+    struct Query { double origin[3]; double direction[3]; };
+    const Query queries[] = {
+        {{0.37, 0.23, -1.0}, {0.0, 0.0, 1.0}},
+        {{0.37, 0.23, -1.0}, {-0.0, 0.0, 1.0}},
+        {{0.37, 0.23, -1.0}, {0.0, 0.0, 2.0}},
+        {{0.37, 0.23, -1.0}, {0.125, 0.25, 1.0}},
+        {{0.37, 0.23, -1.0}, {0.125, 0.25, -1.0}},
+        {{0.37, 0.23, 2.0}, {0.0, -0.0, -1.0}},
+        {{0.37, 0.23, -1.0}, {0.0, 1.0, 0.0}},
+        {{4.37, 0.23, -1.0}, {-1.0, 0.125, 1.0}},
+    };
+    for (const auto quality : {RTC_BUILD_QUALITY_LOW, RTC_BUILD_QUALITY_MEDIUM, RTC_BUILD_QUALITY_HIGH})
+    {
+        for (const bool compact : {false, true})
+        {
+            EmbreeRayTracer tracer(PatchStoragePolicy::AutoIndexed, {quality, compact});
+            tracer.RegisterPatches(patches);
+            tracer.CommitScene();
+            CHECK(tracer.StorageStatistics().indexed_geometries == 1);
+            std::vector<RayHitRecord> expected;
+            for (const auto &query : queries)
+            {
+                // Brute force uses the original, uncached dense-value solver.
+                const auto direct = tracer.IntersectBruteForce(query.origin, query.direction);
+                expected.push_back(direct);
+                CheckSameHit(tracer.Intersect(query.origin, query.direction), direct);
+                CHECK(tracer.Occluded(query.origin, query.direction) == direct.hit);
+            }
+            std::vector<std::future<bool>> workers;
+            for (std::size_t offset = 0; offset < 4; ++offset)
+            {
+                workers.push_back(std::async(std::launch::async, [&, offset]() {
+                    for (std::size_t step = 0; step < 100; ++step)
+                    {
+                        const auto index = (offset + step) % expected.size();
+                        const auto &q = queries[index];
+                        const auto hit = tracer.Intersect(q.origin, q.direction);
+                        const auto &ref = expected[index];
+                        if (hit.hit != ref.hit || (hit.hit &&
+                            (hit.t != ref.t || hit.u != ref.u || hit.v != ref.v ||
+                             hit.Ng[0] != ref.Ng[0] || hit.Ng[1] != ref.Ng[1] || hit.Ng[2] != ref.Ng[2])))
+                        { return false; }
+                    }
+                    return true;
+                }));
+            }
+            for (auto &worker : workers) { CHECK(worker.get()); }
+        }
+    }
+    bool rejected = false;
+    try { EmbreeRayTracer invalid(PatchStoragePolicy::AutoIndexed, {RTC_BUILD_QUALITY_REFIT, false}); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    CHECK(rejected);
+}
+
 } // namespace
 
 void TestEmbreeRayTracer()
 {
+    TestIndexedStorage();
+    TestCachedFramesAndBvhOptions();
     TestSingleFlatPatchIntersectAndOcclude();
     TestNearestOfTwoGeometriesWins();
     TestIntersectAllClustersSharedCoverageButPreservesDistinctWalls();
