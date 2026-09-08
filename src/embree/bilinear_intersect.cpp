@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 namespace mfem_raytracing
@@ -30,6 +31,7 @@ namespace mfem_raytracing
 namespace
 {
 
+// Optional per-thread sink filled by the Embree intersect callback; null when unused.
 thread_local RayQueryDiagnostics *g_active_ray_query_diagnostics = nullptr;
 
 constexpr float kDegeneracyEps = 1e-6f;
@@ -117,7 +119,8 @@ inline float MaxAbsCoeff(const BilinearCoeff &f)
     return std::max(std::max(std::fabs(f.a), std::fabs(f.b)), std::max(std::fabs(f.c), std::fabs(f.d)));
 }
 
-inline Vec3f CornerPoint(const BilinearPatchPrimitive &patch, BilinearCorner corner)
+template <typename Patch>
+inline Vec3f CornerPoint(const Patch &patch, BilinearCorner corner)
 {
     const int i = static_cast<int>(corner);
     return {static_cast<float>(patch.control_points[i][0]),
@@ -125,7 +128,8 @@ inline Vec3f CornerPoint(const BilinearPatchPrimitive &patch, BilinearCorner cor
             static_cast<float>(patch.control_points[i][2])};
 }
 
-inline float CornerWeight(const BilinearPatchPrimitive &patch, BilinearCorner corner)
+template <typename Patch>
+inline float CornerWeight(const Patch &patch, BilinearCorner corner)
 {
     if (!patch.rational)
     {
@@ -166,6 +170,33 @@ inline bool BuildRayFrame(const Vec3f &direction, Vec3f &ex, Vec3f &ey, Vec3f &e
     ex = (1.0f / std::sqrt(ex_norm2)) * ex;
     ey = Cross(ex, ez);
     return true;
+}
+
+struct RayFrame
+{
+    Vec3f direction{}, ex{}, ey{}, ez{};
+    float inv_dir_len = 0.0f;
+    bool valid = false;
+    bool initialized = false;
+};
+
+// A ray can visit multiple leaves; parallel rays also use the same frame.
+// Cache only the direction-dependent arithmetic, never patch/hit data. Exact
+// bit matching preserves signed zeros and direction scale. Each thread owns
+// its cache; the direct diagnostic solver below deliberately bypasses it.
+const RayFrame &CachedRayFrame(const Vec3f &direction)
+{
+    static_assert(sizeof(Vec3f) == 3 * sizeof(float));
+    thread_local RayFrame frame;
+    if (!frame.initialized || std::memcmp(&frame.direction, &direction, sizeof(direction)) != 0)
+    {
+        frame.direction = direction;
+        float length = 0.0f;
+        frame.valid = BuildRayFrame(direction, frame.ex, frame.ey, frame.ez, length);
+        frame.inv_dir_len = frame.valid ? 1.0f / length : 0.0f;
+        frame.initialized = true;
+    }
+    return frame;
 }
 
 // For a fixed u root of M_x = M_y = 0, solve for v and accept if inside the patch.
@@ -301,7 +332,8 @@ inline bool SolveBilinearHit(const BilinearCoeff &mx,
     return hit_found;
 }
 
-BilinearPatchHitResult BilinearPatchResult(const BilinearPatchPrimitive &patch,
+template <typename Patch, bool CacheFrame = false>
+BilinearPatchHitResult BilinearPatchResult(const Patch &patch,
                                           const Vec3f &ray_origin,
                                           const Vec3f &ray_direction,
                                           float tnear,
@@ -309,17 +341,34 @@ BilinearPatchHitResult BilinearPatchResult(const BilinearPatchPrimitive &patch,
 {
     BilinearPatchHitResult result;
 
-    // build the ray frame
+    // Orthonormal frame with e_z || dir; CacheFrame reuses CachedRayFrame for Embree leaves.
     Vec3f ex, ey, ez;
-    float dir_len;
-    if (!BuildRayFrame(ray_direction, ex, ey, ez, dir_len))
+    float inv_dir_len;
+    if constexpr (CacheFrame)
     {
-        result.reject_reasons = BilinearRejectInvalidRay;
-        return result;
+        const auto &frame = CachedRayFrame(ray_direction);
+        if (!frame.valid)
+        {
+            result.reject_reasons = BilinearRejectInvalidRay;
+            return result;
+        }
+        ex = frame.ex;
+        ey = frame.ey;
+        ez = frame.ez;
+        inv_dir_len = frame.inv_dir_len;
     }
-    const float inv_dir_len = 1.0f / dir_len;
+    else
+    {
+        float dir_len;
+        if (!BuildRayFrame(ray_direction, ex, ey, ez, dir_len))
+        {
+            result.reject_reasons = BilinearRejectInvalidRay;
+            return result;
+        }
+        inv_dir_len = 1.0f / dir_len;
+    }
     
-    // per-corner weighted ray scalars from homogeneous control points P^H = (wX, wY, wZ, w).
+    // Per-corner M-components: weighted offsets of P^H = (wX, wY, wZ, w) in the ray frame.
     const auto corner_scalar = [&](BilinearCorner corner, const Vec3f &axis) {
         return WeightedRayScalar(ray_origin, axis, CornerPoint(patch, corner), CornerWeight(patch, corner));
     };
@@ -422,7 +471,7 @@ BilinearPatchRayHit IntersectBilinearPatchDirect(const BilinearPatchPrimitive &p
 void BilinearPatchBoundsFunc(const RTCBoundsFunctionArguments *args)
 {
     const auto *user_data = static_cast<const BilinearPatchGeometryData *>(args->geometryUserPtr);
-    const BilinearPatchPrimitive &patch = user_data->prim_ref_buffer[args->primID];
+    const BilinearPatchView patch = user_data->View(args->primID);
 
     // Rational surface lies in the convex hull of Cartesian corners — only true
     // for positive weights. A non-positive weight breaks the hull argument and
@@ -466,6 +515,7 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
     }
     assert(args->N == 1);
 
+    // Diagnostics are opt-in via SetActiveRayQueryDiagnostics; skip all tallies when null.
     RayQueryDiagnostics *const diagnostics = GetActiveRayQueryDiagnostics();
     if (diagnostics != nullptr)
     {
@@ -473,7 +523,7 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
     }
 
     const auto *user_data = static_cast<const BilinearPatchGeometryData *>(args->geometryUserPtr);
-    const BilinearPatchPrimitive &patch = user_data->prim_ref_buffer[args->primID];
+    const BilinearPatchView patch = user_data->View(args->primID);
 
     // args->rayhit is RTCRayHitN* (an opaque packet type); reinterpret_cast is the
     // documented way to view it as a single RTCRayHit when N == 1.
@@ -485,11 +535,12 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
     const Vec3f direction = {ray.dir_x, ray.dir_y, ray.dir_z};
 
     const BilinearPatchHitResult result =
-        BilinearPatchResult(patch, origin, direction, ray.tnear, ray.tfar);
+        BilinearPatchResult<BilinearPatchView, true>(patch, origin, direction, ray.tnear, ray.tfar);
     if (!result.hit)
     {
         if (diagnostics != nullptr)
         {
+            // One miss can set several reject bits; each counter is incremented independently.
             ++diagnostics->kernel_rejections;
             const unsigned int reasons = result.reject_reasons;
             diagnostics->reject_invalid_ray += (reasons & BilinearRejectInvalidRay) != 0;
@@ -508,6 +559,7 @@ void BilinearPatchIntersectionFunc(const RTCIntersectFunctionNArguments *args)
         ++diagnostics->reported_hits;
     }
 
+    // Shrink tfar so Embree only accepts closer hits on later leaves (closest-hit continuation).
     ray.tfar = result.t;
     hit.u = result.u;
     hit.v = result.v;
@@ -531,7 +583,7 @@ void BilinearPatchOccludedFunc(const RTCOccludedFunctionNArguments *args)
     }
     assert(args->N == 1);
     const auto *user_data = static_cast<const BilinearPatchGeometryData *>(args->geometryUserPtr);
-    const BilinearPatchPrimitive &patch = user_data->prim_ref_buffer[args->primID];
+    const BilinearPatchView patch = user_data->View(args->primID);
 
     // args->ray is RTCRayN*; reinterpret as a single RTCRay because N == 1.
     RTCRay *ray = (RTCRay *)args->ray;
@@ -539,7 +591,7 @@ void BilinearPatchOccludedFunc(const RTCOccludedFunctionNArguments *args)
     const Vec3f direction = {ray->dir_x, ray->dir_y, ray->dir_z};
 
     const BilinearPatchHitResult result =
-        BilinearPatchResult(patch, origin, direction, ray->tnear, ray->tfar);
+        BilinearPatchResult<BilinearPatchView, true>(patch, origin, direction, ray->tnear, ray->tfar);
 
     // Embree convention: an occluded ray is marked by setting tfar to -inf.
     if (result.hit)

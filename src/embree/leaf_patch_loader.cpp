@@ -1,5 +1,6 @@
-// Loader for the bilinear leaf-patch JSON exported by
-// python_experiments/multiple_step_degree_reduction_surfaces (d4_leaf_bboxes.json).
+// Loaders for bilinear leaf scenes, single SurfaceData JSON, and multi-patch catalogs
+// exported by python_experiments/multiple_step_degree_reduction_surfaces
+// (e.g. d4_leaf_bboxes.json) and related surface tooling.
 //
 // The files are machine-generated with a fixed shape, so a small recursive-descent
 // JSON parser is used instead of pulling in an external dependency.
@@ -88,6 +89,7 @@ struct JsonValue
     }
 };
 
+// Minimal recursive-descent parser for the export schemas above (not general-purpose JSON).
 class JsonParser
 {
 public:
@@ -407,6 +409,7 @@ LeafPatch ParseLeaf(const JsonValue &leaf_json)
 {
     LeafPatch leaf;
     leaf.index = static_cast<int>(leaf_json.At("index").AsNumber());
+    // Optional catalog/debug metadata — older leaf dumps omit these keys.
     const auto patch_id_it = leaf_json.object_items.find("patch_id");
     if (patch_id_it != leaf_json.object_items.end())
     {
@@ -453,6 +456,7 @@ LeafPatch ParseLeaf(const JsonValue &leaf_json)
         }
     }
 
+    // null weights → polynomial patch; otherwise a matching 2x2 rational weight net.
     const JsonValue &weights = leaf_json.At("weights");
     if (weights.IsNull())
     {
@@ -491,6 +495,7 @@ std::vector<BilinearPatchPrimitive> LeafPatchScene::Patches() const
     return patches;
 }
 
+// Gate: JSON that advertises certification must be rt_certified unless diagnostics are allowed.
 void LeafPatchScene::RequireRayTracingCertified(bool allow_diagnostic_shell) const
 {
     if (declares_rt_certification && !rt_certified && !allow_diagnostic_shell)
@@ -516,6 +521,7 @@ LeafPatchScene LoadLeafPatchScene(const std::string &json_path)
 
     LeafPatchScene scene;
     scene.surface_name = root.At("surface").string_value;
+    // Optional block; when present, rt_certified feeds RequireRayTracingCertified.
     const auto certification_it = root.object_items.find("certification");
     if (certification_it != root.object_items.end())
     {
@@ -615,6 +621,7 @@ SurfaceData LoadSurfaceDataJson(const std::string &json_path)
         surface.knotvector_v.push_back(k.AsNumber());
     }
 
+    // Open knot vector: non-zero span is knots[p] .. knots[n-p-1].
     const auto pu = static_cast<std::size_t>(surface.degree_u);
     const auto pv = static_cast<std::size_t>(surface.degree_v);
     if (surface.knotvector_u.size() <= 2 * pu + 1 || surface.knotvector_v.size() <= 2 * pv + 1)
@@ -639,6 +646,7 @@ SurfacePatchCatalog LoadSurfacePatchCatalogJson(const std::string &json_path)
     buffer << stream.rdbuf();
     const JsonValue root = JsonParser(buffer.str()).Parse();
 
+    // One SurfaceData per catalog entry (same fields as LoadSurfaceDataJson).
     const auto parse_surface = [](const JsonValue &node) {
         SurfaceData surface;
         surface.degree_u = static_cast<int>(node.At("degree_u").AsNumber());
@@ -699,6 +707,7 @@ SurfacePatchCatalog LoadSurfacePatchCatalogJson(const std::string &json_path)
     };
 
     SurfacePatchCatalog catalog;
+    // Optional provenance; patches[] is the required payload.
     const auto mesh_it = root.object_items.find("mesh");
     if (mesh_it != root.object_items.end()) { catalog.mesh = mesh_it->second.AsString(); }
     const auto description_it = root.object_items.find("description");
@@ -711,6 +720,7 @@ SurfacePatchCatalog LoadSurfacePatchCatalogJson(const std::string &json_path)
         patch.id = static_cast<int>(node.At("id").AsNumber());
         patch.name = node.At("name").AsString();
         patch.role = node.At("role").AsString();
+        // Optional MFEM/volume tagging used by downstream reduction tooling.
         const auto quarter_it = node.object_items.find("quarter");
         if (quarter_it != node.object_items.end()) { patch.quarter = static_cast<int>(quarter_it->second.AsNumber()); }
         const auto volume_it = node.object_items.find("volume_patch");

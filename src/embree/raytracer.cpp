@@ -1,3 +1,6 @@
+// Embree device/scene owner for bilinear user geometries: register patches,
+// commit BVH, and query closest / all / occluded hits (plus brute-force checks).
+
 #include "mfem_raytracing/embree/raytracer.hpp"
 
 #include "mfem_raytracing/embree/bilinear_intersect.hpp"
@@ -6,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 
 namespace mfem_raytracing
 {
@@ -32,14 +36,28 @@ void EmbreeErrorFunc(void * /*user_ptr*/, RTCError code, const char *str)
 
 } // namespace
 
-EmbreeRayTracer::EmbreeRayTracer()
+EmbreeRayTracer::EmbreeRayTracer() : EmbreeRayTracer(PatchStoragePolicy::AutoIndexed) {}
+
+EmbreeRayTracer::EmbreeRayTracer(PatchStoragePolicy storage_policy)
+    : EmbreeRayTracer(storage_policy, BvhBuildOptions{}) {}
+
+EmbreeRayTracer::EmbreeRayTracer(PatchStoragePolicy storage_policy,
+                                 const BvhBuildOptions &build_options)
+    : storage_policy_(storage_policy)
 {
+    if (build_options.quality != RTC_BUILD_QUALITY_LOW &&
+        build_options.quality != RTC_BUILD_QUALITY_MEDIUM &&
+        build_options.quality != RTC_BUILD_QUALITY_HIGH)
+    {
+        throw std::invalid_argument("BVH quality must be LOW, MEDIUM, or HIGH");
+    }
     device_ = rtcNewDevice(nullptr);
     rtcSetDeviceErrorFunction(device_, EmbreeErrorFunc, nullptr);
 
     scene_ = rtcNewScene(device_);
-    rtcSetSceneFlags(scene_, RTC_SCENE_FLAG_ROBUST);
-    rtcSetSceneBuildQuality(scene_, RTC_BUILD_QUALITY_HIGH);
+    rtcSetSceneFlags(scene_, static_cast<RTCSceneFlags>(RTC_SCENE_FLAG_ROBUST |
+                      (build_options.compact ? RTC_SCENE_FLAG_COMPACT : RTC_SCENE_FLAG_NONE)));
+    rtcSetSceneBuildQuality(scene_, build_options.quality);
 }
 
 EmbreeRayTracer::~EmbreeRayTracer()
@@ -58,13 +76,30 @@ unsigned int EmbreeRayTracer::RegisterPatches(std::vector<BilinearPatchPrimitive
                                               double box_bump)
 {
     auto slot = std::make_unique<GeometrySlot>();
-    slot->patches = std::move(patches);
-    slot->data.prim_ref_buffer = slot->patches.data();
-    slot->data.primitive_count = slot->patches.size();
+    slot->data.primitive_count = patches.size();
+    // AutoIndexed: keep the indexed form only when it is strictly smaller than
+    // a dense BilinearPatchPrimitive buffer (plus the storage object itself).
+    if (storage_policy_ == PatchStoragePolicy::AutoIndexed && !patches.empty())
+    {
+        auto indexed = std::make_unique<IndexedBilinearPatchStorage>(patches);
+        if (indexed->BufferBytes() + sizeof(IndexedBilinearPatchStorage) <
+            patches.size() * sizeof(BilinearPatchPrimitive))
+        {
+            slot->indexed = std::move(indexed);
+            slot->data.indexed = slot->indexed.get();
+        }
+    }
+    // Dense fallback: Embree callbacks read prim_ref_buffer[primID] via View/Load.
+    if (!slot->indexed)
+    {
+        slot->patches = std::move(patches);
+        slot->data.prim_ref_buffer = slot->patches.data();
+    }
     slot->data.box_bump = box_bump;
 
+    // User geometry: bounds / intersect / occluded are the bilinear callbacks.
     RTCGeometry geometry = rtcNewGeometry(device_, RTC_GEOMETRY_TYPE_USER);
-    rtcSetGeometryUserPrimitiveCount(geometry, slot->patches.size());
+    rtcSetGeometryUserPrimitiveCount(geometry, slot->data.primitive_count);
     rtcSetGeometryUserData(geometry, &slot->data);
     rtcSetGeometryBoundsFunction(geometry, &BilinearPatchBoundsFunc, nullptr);
     rtcSetGeometryIntersectFunction(geometry, &BilinearPatchIntersectionFunc);
@@ -166,10 +201,12 @@ RayHitRecord EmbreeRayTracer::IntersectBruteForce(const double origin[3],
     {
         const unsigned int geom_id = entry.first;
         const GeometrySlot &slot = *entry.second;
-        for (std::size_t prim_id = 0; prim_id < slot.patches.size(); ++prim_id)
+        for (std::size_t prim_id = 0; prim_id < slot.data.primitive_count; ++prim_id)
         {
+            // Load materializes indexed patches into scratch; dense uses the buffer.
+            BilinearPatchPrimitive scratch;
             const BilinearPatchRayHit hit = IntersectBilinearPatchDirect(
-                slot.patches[prim_id], origin_f, direction_f, tnear_f, best_t);
+                slot.data.Load(prim_id, scratch), origin_f, direction_f, tnear_f, best_t);
             if (!hit.hit)
             {
                 continue;
@@ -205,10 +242,11 @@ std::vector<RayHitRecord> EmbreeRayTracer::IntersectAllBruteForce(
     {
         const unsigned int geom_id = entry.first;
         const GeometrySlot &slot = *entry.second;
-        for (std::size_t prim_id = 0; prim_id < slot.patches.size(); ++prim_id)
+        for (std::size_t prim_id = 0; prim_id < slot.data.primitive_count; ++prim_id)
         {
+            BilinearPatchPrimitive scratch;
             const BilinearPatchRayHit hit = IntersectBilinearPatchDirect(
-                slot.patches[prim_id], origin_f, direction_f, tnear_f, tfar_f);
+                slot.data.Load(prim_id, scratch), origin_f, direction_f, tnear_f, tfar_f);
             if (!hit.hit)
             {
                 continue;
@@ -298,11 +336,57 @@ const BilinearPatchPrimitive *EmbreeRayTracer::GetPatch(unsigned int geom_id,
                                                         unsigned int prim_id) const
 {
     const auto it = geometry_slots_.find(geom_id);
-    if (it == geometry_slots_.end() || prim_id >= it->second->patches.size())
+    if (it == geometry_slots_.end() || prim_id >= it->second->data.primitive_count)
     {
         return nullptr;
     }
-    return &it->second->patches[prim_id];
+    const GeometrySlot &slot = *it->second;
+    if (!slot.indexed) { return &slot.patches[prim_id]; }
+    // Indexed slots have no stable dense address; cache an exact copy for callers
+    // that need a BilinearPatchPrimitive* (see also CopyPatch / Load).
+    std::lock_guard<std::mutex> lock(slot.cache_mutex);
+    auto found = slot.compatibility_cache.find(prim_id);
+    if (found == slot.compatibility_cache.end())
+    {
+        found = slot.compatibility_cache.emplace(prim_id, slot.indexed->Load(prim_id)).first;
+    }
+    return &found->second;
+}
+
+bool EmbreeRayTracer::CopyPatch(unsigned int geom_id, unsigned int prim_id,
+                                BilinearPatchPrimitive &patch) const
+{
+    const auto it = geometry_slots_.find(geom_id);
+    if (it == geometry_slots_.end() || prim_id >= it->second->data.primitive_count)
+    {
+        return false;
+    }
+    BilinearPatchPrimitive scratch;
+    patch = it->second->data.Load(prim_id, scratch);
+    return true;
+}
+
+PatchStorageStatistics EmbreeRayTracer::StorageStatistics() const
+{
+    PatchStorageStatistics stats;
+    for (const auto &entry : geometry_slots_)
+    {
+        const auto &slot = *entry.second;
+        stats.dense_equivalent_bytes += slot.data.primitive_count * sizeof(BilinearPatchPrimitive);
+        if (slot.indexed)
+        {
+            ++stats.indexed_geometries;
+            stats.buffer_bytes += slot.indexed->BufferBytes();
+        }
+        else
+        {
+            ++stats.dense_geometries;
+            stats.buffer_bytes += slot.patches.capacity() * sizeof(BilinearPatchPrimitive);
+        }
+        std::lock_guard<std::mutex> lock(slot.cache_mutex);
+        stats.compatibility_patch_bytes += slot.compatibility_cache.size() * sizeof(BilinearPatchPrimitive);
+    }
+    return stats;
 }
 
 std::size_t EmbreeRayTracer::PatchCount() const
@@ -310,7 +394,7 @@ std::size_t EmbreeRayTracer::PatchCount() const
     std::size_t count = 0;
     for (const auto &entry : geometry_slots_)
     {
-        count += entry.second->patches.size();
+        count += entry.second->data.primitive_count;
     }
     return count;
 }
