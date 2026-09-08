@@ -247,7 +247,7 @@ void WriteHardSeamBilinearizationJson(std::ostream &os,
     os << "{\n  \"mesh\": "; WriteString(os, result.mesh); os << ",\n";
     os << "  \"surface\": "; WriteString(os, surface_name); os << ",\n";
     os << "  \"backend\": \"approach_4_competing_coalesced_hard_seams\",\n";
-    os << "  \"note\": \"full multi-span world-coordinate hard-seam reduction; no cage centering; no inter-patch sewing\",\n";
+    os << "  \"note\": \"full multi-span hard-seam reduction; rational error correction uses control-point-centroid-relative bounds (translation invariant); no full-cage recentering; no inter-patch sewing\",\n";
     os << "  \"max_error\": " << result.max_error << ",\n";
     os << "  \"patch_ids\": [";
     for (std::size_t i = 0; i < result.patches.size(); ++i)
