@@ -359,8 +359,12 @@ private:
     {
         const Node &node = nodes_[static_cast<std::size_t>(node_id)];
         const Vec3 &candidate = points_[static_cast<std::size_t>(node.point)];
-        best_sq = std::min(best_sq, NormSq(point - candidate));
-        if (best_sq == NormSq(point - candidate)) { best = node.point; }
+        const double candidate_sq = NormSq(point - candidate);
+        if (candidate_sq < best_sq)
+        {
+            best_sq = candidate_sq;
+            best = node.point;
+        }
         const double delta = node.axis == 0 ? point.x - candidate.x : (node.axis == 1 ? point.y - candidate.y : point.z - candidate.z);
         const int first = delta < 0.0 ? node.left : node.right;
         const int second = delta < 0.0 ? node.right : node.left;
